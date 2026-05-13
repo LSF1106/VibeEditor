@@ -26,7 +26,7 @@ export function createElectronClient(): FileServiceClient {
     readFile: (path) => api.readFile(path),
     writeFile: (path, content) => api.writeFile(path, content),
     deleteFile: (path) => api.deleteFile(path),
-    readDir: (path) => api.readDir(path),
+    readDir: (path) => api.readDir(path) as Promise<FileEntry[]>,
     createDir: (path) => api.createDir(path),
     deleteDir: (path, recursive) => api.deleteDir(path, recursive),
     exists: (path) => api.exists(path),

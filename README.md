@@ -2,6 +2,99 @@
 
 AI-powered code editor built with **Monaco Editor** + **Vue 3**, supporting both **server deployment** and **Electron desktop**.
 
+## Features & Development Status
+
+> **Legend**: ✅ Done &nbsp; ⚠️ Framework ready, needs implementation &nbsp; ❌ Not started
+
+### P0 — Core Editing
+
+| # | Feature | Status | Notes |
+|---|---------|--------|-------|
+| 1 | Monaco Editor integration | ✅ | Syntax highlighting, vs-dark theme, minimap, bracket pair colorization |
+| 2 | Multi-tab management / dirty flag | ✅ | Pinia store driven, `packages/web/src/stores/editor.ts` |
+| 3 | Open file (local / remote) | ⚠️ | Electron IPC + Server API working; browser File System Access API scaffold only |
+| 4 | Open folder (file tree) | ⚠️ | Electron `showOpenDialog` + Server `/api/files/list` working; browser side incomplete |
+| 5 | Save file (Ctrl+S) | ✅ | Electron IPC + Server API both implemented |
+| 6 | New untitled file | ✅ | `store.newUntitled()` |
+| 7 | Keyboard shortcuts | ⚠️ | Only Ctrl+S bound; full shortcut system missing |
+
+### P1 — AI Agent Assisted Editing
+
+| # | Feature | Status | Notes |
+|---|---------|--------|-------|
+| 8 | Agent chat panel | ✅ | `AgentPanel.vue`, supports chat/edit/agent mode switching |
+| 9 | Agent streaming response (SSE) | ⚠️ | Server `/api/agent/stream` has placeholder; frontend `agentService.streamMessage` scaffold ready |
+| 10 | Agent generates edits and applies to files | ❌ | `core/agent/executor.ts` `executeEdits` implemented; missing LLM backend to produce edit instructions |
+| 11 | Agent context builder (open files + cursor + selection) | ✅ | `core/agent/context.ts` — `buildContextPrompt()` |
+| 12 | Edit undo / redo | ⚠️ | `core/agent/executor.ts` — `revertEdits()` implemented; not wired to frontend UI |
+| 13 | LLM backend integration (OpenAI / Anthropic / etc.) | ❌ | Server agent routes return placeholders; needs real AI service integration |
+
+### P2 — File System & Project Management
+
+| # | Feature | Status | Notes |
+|---|---------|--------|-------|
+| 14 | Three file system implementations (`IFileSystem`) | ✅ | `LocalFileSystem` / `ServerFileSystem` / `VirtualFileSystem` |
+| 15 | Runtime environment auto-detection | ✅ | `fileService.ts` → detect Electron / Server / Browser |
+| 16 | File / folder rename | ✅ | Backend API implemented; frontend context menu UI not done |
+| 17 | File / folder delete | ✅ | Backend API implemented; frontend context menu UI not done |
+| 18 | New file / folder creation | ⚠️ | Server + Electron API implemented; frontend only has placeholder "New" button |
+| 19 | File watching / auto-refresh | ⚠️ | `IFileSystem.watch()` defined, `LocalFileSystem` implemented; frontend not consuming |
+| 20 | Drag and drop files to open | ❌ | |
+| 21 | Recent projects / files list | ❌ | |
+| 22 | Workspace persistence (remember last opened folder) | ❌ | |
+
+### P3 — Editing Enhancements
+
+| # | Feature | Status | Notes |
+|---|---------|--------|-------|
+| 23 | Find / replace (single file) | ❌ | Monaco built-in Find widget available, but not custom-integrated |
+| 24 | Cross-file search (project-wide) | ❌ | |
+| 25 | Diff view | ❌ | Monaco built-in diff editor, not wrapped |
+| 26 | Code folding / outline | ✅ | Supported natively by Monaco |
+| 27 | Multi-cursor editing | ✅ | Supported natively by Monaco |
+| 28 | Diagnostics / error highlighting | ❌ | Needs TypeScript/ESLint Language Server integration |
+| 29 | Code completion / IntelliSense | ⚠️ | Monaco basic completion built-in; TypeScript smart completion not configured |
+| 30 | Code snippets | ❌ | |
+| 31 | Formatting (Prettier integration) | ❌ | |
+| 32 | Theme switching (light / dark / custom) | ❌ | Only hardcoded `vs-dark` |
+
+### P4 — Deployment & Distribution
+
+| # | Feature | Status | Notes |
+|---|---------|--------|-------|
+| 33 | Server deployment (Express + static frontend) | ✅ | `SERVE_STATIC` env var points to `web/dist` |
+| 34 | Electron desktop app | ✅ | Supports dev/prod mode, IPC file operations, file dialogs |
+| 35 | Electron native menu bar | ❌ | |
+| 36 | Electron packaging / installer (electron-builder) | ⚠️ | Configured in `package.json`, not verified |
+| 37 | Path traversal protection | ✅ | Server file routes enforce `resolve` → `startsWith` check |
+| 38 | Authentication (Bearer Token) | ⚠️ | Middleware implemented; not wired to frontend/CLI |
+| 39 | Docker deployment | ❌ | |
+| 40 | CI/CD (GitHub Actions) | ❌ | |
+
+### P5 — UX & Engineering
+
+| # | Feature | Status | Notes |
+|---|---------|--------|-------|
+| 41 | Resizable layout (draggable splitter) | ✅ | `MainLayout.vue` — adjustable sidebar width |
+| 42 | Status bar (cursor position, language, encoding) | ❌ | |
+| 43 | Context menus (right-click) | ❌ | File tree / tab bar / editor area all missing |
+| 44 | Error / notification toasts | ❌ | |
+| 45 | Loading states / skeletons | ❌ | |
+| 46 | Internationalization (i18n) | ❌ | |
+| 47 | Responsive / mobile adaptation | ❌ | |
+| 48 | Automated testing (unit / e2e) | ❌ | No test framework configured |
+| 49 | ESLint / Prettier config | ❌ | Dependencies installed, no config files |
+| 50 | Session restore (reopen tabs on restart) | ❌ | |
+
+### Summary
+
+| Status | Count |
+|--------|-------|
+| ✅ Done | 19 |
+| ⚠️ Scaffold ready | 12 |
+| ❌ Not started | 19 |
+| **Total** | **50** |
+
 ## Architecture
 
 ```
