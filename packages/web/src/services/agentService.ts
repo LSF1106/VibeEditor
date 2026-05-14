@@ -8,10 +8,13 @@ export interface AgentMessage {
 export interface AgentConfig {
   mode: 'chat' | 'edit' | 'agent';
   model?: string;
+  apiUrl?: string;
+  apiKey?: string;
 }
 
 export function createAgentService(baseUrl = '') {
   return {
+    // 非流式发送消息：POST 后等待完整 JSON 响应
     async sendMessage(message: string, context: Record<string, unknown>, config: AgentConfig): Promise<AgentMessage> {
       const res = await fetch(`${baseUrl}/api/agent/chat`, {
         method: 'POST',
@@ -22,6 +25,8 @@ export function createAgentService(baseUrl = '') {
       return res.json();
     },
 
+    // 流式接收消息：通过 ReadableStream 逐行解析 SSE 事件
+    // 使用 buffer 处理跨 chunk 边界的不完整 SSE 行
     async streamMessage(
       message: string,
       context: Record<string, unknown>,
@@ -34,24 +39,38 @@ export function createAgentService(baseUrl = '') {
         body: JSON.stringify({ message, context, config }),
       });
 
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Agent API error ${res.status}: ${errText}`);
+      }
+
       const reader = res.body?.getReader();
       if (!reader) throw new Error('Stream not available');
 
       const decoder = new TextDecoder();
       let fullContent = '';
+      let buffer = ''; // 缓冲区：处理跨 chunk 边界的不完整行
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        const text = decoder.decode(value, { stream: true });
-        const lines = text.split('\n').filter(l => l.startsWith('data: '));
-        for (const line of lines) {
-          const data = JSON.parse(line.slice(6));
-          if (data.done) break;
-          if (data.chunk) {
-            fullContent += data.chunk;
-            onChunk(data.chunk);
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split('\n');
+        buffer = parts.pop() || ''; // 最后一段可能是未完成的 SSE 行，保留到下次
+
+        for (const line of parts) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const data = JSON.parse(line.slice(6));
+            if (data.error) throw new Error(data.error);
+            if (data.done) break; // 流结束
+            if (data.chunk) {
+              fullContent += data.chunk;
+              onChunk(data.chunk); // 逐 token 回调，驱动 UI 实时更新
+            }
+          } catch {
+            // 跳过格式异常的 SSE 行
           }
         }
       }

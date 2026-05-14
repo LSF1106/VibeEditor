@@ -24,7 +24,7 @@
           @expand-dir="handleExpandDir"
         />
       </div>
-      <div class="resize-handle" @mousedown="startResize"></div>
+      <div class="resize-handle" @mousedown="startSidebarResize"></div>
       <div class="editor-area">
         <div class="tabs-bar">
           <div
@@ -72,8 +72,10 @@
           </div>
         </div>
       </div>
-      <div v-if="showAgent" class="agent-sidebar">
-        <AgentPanel />
+      <!-- Agent 面板拖拽手柄 -->
+      <div v-if="showAgent" class="agent-resize-handle" @mousedown="startAgentResize"></div>
+      <div v-if="showAgent" class="agent-sidebar" :style="{ width: agentWidth + 'px' }">
+        <AgentPanel @apply-edits="handleApplyEdits" />
       </div>
     </div>
   </div>
@@ -83,6 +85,7 @@
 import { ref } from 'vue';
 import { useEditorStore } from '../../stores/editor';
 import { useFileSystem } from '../../composables/useFileSystem';
+import type { ParsedEdit } from '../../services/editParser';
 import Toolbar from '../toolbar/Toolbar.vue';
 import FileTree from '../file-tree/FileTree.vue';
 import MonacoEditor from '../editor/MonacoEditor.vue';
@@ -93,10 +96,12 @@ const fs = useFileSystem();
 
 const showAgent = ref(false);
 const sidebarWidth = ref(260);
+const agentWidth = ref(350);
 const expandedDirs = ref(new Set<string>());
 const loadingDirs = ref(new Set<string>());
 const dirChildren = ref<Record<string, any[]>>({});
-let isResizing = false;
+let isResizingSidebar = false;
+let isResizingAgent = false;
 
 function clearDirState() {
   expandedDirs.value = new Set();
@@ -132,25 +137,72 @@ async function handleExpandDir(dirPath: string) {
   loadingDirs.value = new Set([...loadingDirs.value].filter(d => d !== dirPath));
 }
 
-function startResize(e: MouseEvent) {
-  isResizing = true;
+// 侧边栏（文件树）宽度拖拽
+function startSidebarResize(e: MouseEvent) {
+  isResizingSidebar = true;
   const startX = e.clientX;
   const startWidth = sidebarWidth.value;
 
   const onMove = (ev: MouseEvent) => {
-    if (!isResizing) return;
-    const newWidth = startWidth + (ev.clientX - startX);
-    sidebarWidth.value = Math.max(150, Math.min(500, newWidth));
+    if (!isResizingSidebar) return;
+    sidebarWidth.value = Math.max(150, Math.min(500, startWidth + (ev.clientX - startX)));
   };
 
   const onUp = () => {
-    isResizing = false;
+    isResizingSidebar = false;
     document.removeEventListener('mousemove', onMove);
     document.removeEventListener('mouseup', onUp);
   };
 
   document.addEventListener('mousemove', onMove);
   document.addEventListener('mouseup', onUp);
+}
+
+// Agent 面板宽度拖拽（向左拖拽手柄）
+function startAgentResize(e: MouseEvent) {
+  isResizingAgent = true;
+  const startX = e.clientX;
+  const startWidth = agentWidth.value;
+
+  const onMove = (ev: MouseEvent) => {
+    if (!isResizingAgent) return;
+    // 向左拖拽增加宽度，向右减小
+    agentWidth.value = Math.max(200, Math.min(600, startWidth - (ev.clientX - startX)));
+  };
+
+  const onUp = () => {
+    isResizingAgent = false;
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+  };
+
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+}
+
+// 处理 Agent 生成的编辑操作：写入文件并更新已打开的编辑器标签页
+async function handleApplyEdits(edits: ParsedEdit[]) {
+  for (const edit of edits) {
+    try {
+      // LLM 可能返回相对路径，需要基于工作区根目录解析
+      const resolvedPath = edit.path.startsWith('/') || edit.path.includes(':')
+        ? edit.path
+        : store.workspaceRoot
+          ? store.workspaceRoot.replace(/[\/\\]?$/, '/') + edit.path
+          : edit.path;
+
+      await fs.client.value.writeFile(resolvedPath, edit.content);
+
+      // 如果该文件已在编辑器中打开，更新标签页内容并标记为已保存
+      const tab = store.tabs.find(t => t.path === resolvedPath);
+      if (tab) {
+        store.updateContent(tab.id, edit.content);
+        store.saveTab(tab.id);
+      }
+    } catch (e: any) {
+      console.error('Failed to apply edit to', edit.path, e);
+    }
+  }
 }
 </script>
 
@@ -265,8 +317,16 @@ function startResize(e: MouseEvent) {
   background: var(--bg-hover);
   border-color: var(--accent-color);
 }
+.agent-resize-handle {
+  width: 4px;
+  cursor: col-resize;
+  background: var(--border-color);
+  flex-shrink: 0;
+}
+.agent-resize-handle:hover {
+  background: var(--accent-color);
+}
 .agent-sidebar {
-  width: 350px;
   flex-shrink: 0;
   border-left: 1px solid var(--border-color);
 }

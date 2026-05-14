@@ -19,6 +19,8 @@ export interface AgentEditResult {
 export interface AgentConfig {
   mode: AgentMode;
   model?: string;
+  apiUrl?: string;
+  apiKey?: string;
   systemPrompt?: string;
   temperature?: number;
   maxTokens?: number;
