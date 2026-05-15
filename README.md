@@ -1,195 +1,200 @@
 # VibeEditor
 
-AI-powered code editor built with **Monaco Editor** + **Vue 3**, supporting both **server deployment** and **Electron desktop**.
+> [English](README_EN.md)
 
-## Features & Development Status
+基于 **Monaco Editor** + **Vue 3** 的 AI 辅助代码编辑器，同时支持**服务器部署**和 **Electron 桌面端**。
 
-> **Legend**: ✅ Done &nbsp; ⚠️ Framework ready, needs implementation &nbsp; ❌ Not started
+## 功能需求与开发进度
 
-### P0 — Core Editing
+> **图例**: ✅ 已完成 &nbsp; ⚠️ 框架就绪，待实现 &nbsp; ❌ 未开始
 
-| # | Feature | Status | Notes |
-|---|---------|--------|-------|
-| 1 | Monaco Editor integration | ✅ | Syntax highlighting, vs-dark theme, minimap, bracket pair colorization |
-| 2 | Multi-tab management / dirty flag | ✅ | Pinia store driven, `packages/web/src/stores/editor.ts` |
-| 3 | Open file (local / remote) | ✅ | Electron IPC + Server API working; browser File System Access API scaffold only |
-| 4 | Open folder (file tree) | ✅ | Electron `showOpenDialog` + Server `/api/files/list` working; browser side incomplete |
-| 5 | Save file (Ctrl+S) | ✅ | Electron IPC + Server API both implemented |
-| 6 | New untitled file | ✅ | `store.newUntitled()` |
-| 7 | Keyboard shortcuts | ⚠️ | Only Ctrl+S bound; full shortcut system missing |
+### P0 — 核心编辑
 
-### P1 — AI Agent Assisted Editing
+| # | 功能 | 状态 | 说明 |
+|---|------|------|------|
+| 1 | Monaco Editor 集成 | ✅ | 语法高亮、vs-dark 主题、Minimap、Bracket 配对 |
+| 2 | 多 Tab 管理 / 脏标记 | ✅ | Pinia store 驱动, `packages/web/src/stores/editor.ts` |
+| 3 | 打开文件 (本地/远程) | ✅ | Electron IPC + Server API 已通; 浏览器 File System Access API 仅框架 |
+| 4 | 打开文件夹 (目录树) | ✅ | Electron `showOpenDialog` + Server `/api/files/list` 已通; 浏览器端未完成 |
+| 5 | 文件保存 (Ctrl+S) | ✅ | Electron IPC + Server API 均已实现 |
+| 6 | 新建无标题文件 | ✅ | `store.newUntitled()` |
+| 7 | 键盘快捷键 | ⚠️ | 已绑定 Ctrl+S、Ctrl+C、Ctrl+V（自定义复制/粘贴）; Electron 菜单快捷键 IPC 桥接就绪但未接入; 缺少完整快捷键体系 |
 
-| # | Feature | Status | Notes |
-|---|---------|--------|-------|
-| 8 | Agent chat panel | ✅ | `AgentPanel.vue`, supports chat/edit/agent mode switching |
-| 9 | Agent streaming response (SSE) | ⚠️ | Server `/api/agent/stream` has placeholder; frontend `agentService.streamMessage` scaffold ready |
-| 10 | Agent generates edits and applies to files | ❌ | `core/agent/executor.ts` `executeEdits` implemented; missing LLM backend to produce edit instructions |
-| 11 | Agent context builder (open files + cursor + selection) | ✅ | `core/agent/context.ts` — `buildContextPrompt()` |
-| 12 | Edit undo / redo | ⚠️ | `core/agent/executor.ts` — `revertEdits()` implemented; not wired to frontend UI |
-| 13 | LLM backend integration (OpenAI / Anthropic / etc.) | ❌ | Server agent routes return placeholders; needs real AI service integration |
+### P1 — AI Agent 辅助编辑
 
-### P2 — File System & Project Management
+| # | 功能 | 状态 | 说明 |
+|---|------|------|------|
+| 8 | Agent 对话面板 | ✅ | `AgentPanel.vue`, 支持 chat/edit/agent 三种模式、Markdown + KaTeX 渲染、多 Provider 配置管理 |
+| 9 | Agent 消息流式输出 (SSE) | ✅ | Server SSE + 前端 stream 解析已完整打通; 支持真实 LLM 流式响应 |
+| 10 | Agent 生成编辑操作并应用到文件 | ⚠️ | `<edit>` 区块解析 → 文件写入流程已打通; 但编辑/Agent 模式的 system prompt 在 `provider.ts` 中被硬编码为 `chat` 模式 (Bug); core `executor.ts` 未接入 |
+| 11 | Agent 上下文构建 (打开文件+光标+选区) | ✅ | `core/agent/context.ts` — `buildContextPrompt()` 已实现; 但前端 `useAgent.ts` 未填充 `openFiles`, `fileTree` 等上下文到请求中 |
+| 12 | 编辑操作撤销/重做 | ⚠️ | `core/agent/executor.ts` — `revertEdits()` 已实现; 前端未接入 UI |
+| 13 | LLM 后端对接 (OpenAI / Anthropic / etc.) | ⚠️ | 已通过 raw fetch 对接 OpenAI 兼容 API (支持 Ollama / vLLM 等); 无 SDK 依赖; 编辑/Agent 模式 system prompt 硬编码 bug (#10) 待修复 |
 
-| # | Feature | Status | Notes |
-|---|---------|--------|-------|
-| 14 | Three file system implementations (`IFileSystem`) | ✅ | `LocalFileSystem` / `ServerFileSystem` / `VirtualFileSystem` |
-| 15 | Runtime environment auto-detection | ✅ | `fileService.ts` → detect Electron / Server / Browser |
-| 16 | File / folder rename | ✅ | Backend API implemented; frontend context menu UI not done |
-| 17 | File / folder delete | ✅ | Backend API implemented; frontend context menu UI not done |
-| 18 | New file / folder creation | ⚠️ | Server + Electron API implemented; frontend only has placeholder "New" button |
-| 19 | File watching / auto-refresh | ⚠️ | `IFileSystem.watch()` defined, `LocalFileSystem` implemented; frontend not consuming |
-| 20 | Drag and drop files to open | ❌ | |
-| 21 | Recent projects / files list | ❌ | |
-| 22 | Workspace persistence (remember last opened folder) | ❌ | |
+### P2 — 文件系统 & 项目管理
 
-### P3 — Editing Enhancements
+| # | 功能 | 状态 | 说明 |
+|---|------|------|------|
+| 14 | 三种文件系统实现 (`IFileSystem`) | ✅ | `LocalFileSystem` / `ServerFileSystem` / `VirtualFileSystem` |
+| 15 | 运行时环境自动检测 | ✅ | `fileService.ts` → 检测 Electron / Server / Browser |
+| 16 | 文件/文件夹重命名 | ✅ | 底层 API 已实现; 前端 UI 上下文菜单未做 |
+| 17 | 文件/文件夹删除 | ✅ | 底层 API 已实现; 前端 UI 上下文菜单未做 |
+| 18 | 新建文件/文件夹 | ⚠️ | Server + Electron API 已实现; 前端仅有 "+ New" 按钮（创建无标题 Tab, 保存时弹出对话框） |
+| 19 | 文件监听 / 自动刷新 | ⚠️ | `IFileSystem.watch()` 已定义, `LocalFileSystem` 实现了; Server 有 `chokidar` 依赖但未启用推送; 前端未消费 |
+| 20 | 拖拽文件到编辑器打开 | ❌ | |
+| 21 | 最近打开的项目/文件列表 | ❌ | |
+| 22 | 工作区持久化 (记住上次打开目录) | ❌ | Pinia store 纯内存, 刷新即丢失 (仅 LLM Provider 配置持久化到 localStorage) |
 
-| # | Feature | Status | Notes |
-|---|---------|--------|-------|
-| 23 | Find / replace (single file) | ❌ | Monaco built-in Find widget available, but not custom-integrated |
-| 24 | Cross-file search (project-wide) | ❌ | |
-| 25 | Diff view | ❌ | Monaco built-in diff editor, not wrapped |
-| 26 | Code folding / outline | ✅ | Supported natively by Monaco |
-| 27 | Multi-cursor editing | ✅ | Supported natively by Monaco |
-| 28 | Diagnostics / error highlighting | ❌ | Needs TypeScript/ESLint Language Server integration |
-| 29 | Code completion / IntelliSense | ⚠️ | Monaco basic completion built-in; TypeScript smart completion not configured |
-| 30 | Code snippets | ❌ | |
-| 31 | Formatting (Prettier integration) | ❌ | |
-| 32 | Theme switching (light / dark / custom) | ❌ | Only hardcoded `vs-dark` |
+### P3 — 编辑增强
 
-### P4 — Deployment & Distribution
+| # | 功能 | 状态 | 说明 |
+|---|------|------|------|
+| 23 | 搜索 / 替换 (单文件) | ❌ | Monaco 内置 Find 控件可用, 但未自定义集成 |
+| 24 | 跨文件搜索 (项目级) | ❌ | |
+| 25 | Diff 对比视图 | ❌ | Monaco 内置 diff editor, 未封装 |
+| 26 | 代码折叠 / 大纲 | ✅ | 由 Monaco 原生支持 |
+| 27 | 多光标编辑 | ✅ | 由 Monaco 原生支持 |
+| 28 | 语法错误 / 诊断信息 | ❌ | 需接入 TypeScript/ESLint Language Server |
+| 29 | 代码自动补全 / IntelliSense | ⚠️ | Monaco 内置基础补全; TypeScript 语言的智能补全未配置 |
+| 30 | 代码片段 (Snippets) | ❌ | |
+| 31 | 格式化 (Prettier 集成) | ❌ | Prettier 已安装为 devDependency 但未被调用 |
+| 32 | 主题切换 (亮色/暗色/自定义) | ❌ | 仅硬编码 `vs-dark` |
 
-| # | Feature | Status | Notes |
-|---|---------|--------|-------|
-| 33 | Server deployment (Express + static frontend) | ✅ | `SERVE_STATIC` env var points to `web/dist` |
-| 34 | Electron desktop app | ✅ | Supports dev/prod mode, IPC file operations, file dialogs |
-| 35 | Electron native menu bar | ❌ | |
-| 36 | Electron packaging / installer (electron-builder) | ⚠️ | Configured in `package.json`, not verified |
-| 37 | Path traversal protection | ✅ | Server file routes enforce `resolve` → `startsWith` check |
-| 38 | Authentication (Bearer Token) | ⚠️ | Middleware implemented; not wired to frontend/CLI |
-| 39 | Docker deployment | ❌ | |
+### P4 — 部署 & 分发
+
+| # | 功能 | 状态 | 说明 |
+|---|------|------|------|
+| 33 | 服务器部署 (Express + 静态前端) | ✅ | `SERVE_STATIC` 环境变量指向 `web/dist` |
+| 34 | Electron 桌面应用 | ✅ | 支持 dev/prod 模式, IPC 文件操作, 文件对话框 |
+| 35 | Electron 原生菜单栏 | ❌ | preload 暴露了 `onMenuAction` IPC 监听器, 但 main.ts 未创建任何菜单 |
+| 36 | Electron 打包 / 安装程序 (electron-builder) | ⚠️ | `package.json` 已配置基本 `build` 字段 (appId, productName); 缺少平台目标 (win/mac/linux)、图标、自动更新等; 未验证 |
+| 37 | 路径遍历防护 | ✅ | Server file routes 已做 `resolve` → `startsWith` 校验 |
+| 38 | 认证 / 鉴权 (Bearer Token) | ⚠️ | 中间件已实现, 但 `index.ts` 中未被导入或挂载 (死代码) |
+| 39 | Docker 部署 | ❌ | |
 | 40 | CI/CD (GitHub Actions) | ❌ | |
 
-### P5 — UX & Engineering
+### P5 — 体验 & 工程化
 
-| # | Feature | Status | Notes |
-|---|---------|--------|-------|
-| 41 | Resizable layout (draggable splitter) | ✅ | `MainLayout.vue` — adjustable sidebar width |
-| 42 | Status bar (cursor position, language, encoding) | ❌ | |
-| 43 | Context menus (right-click) | ❌ | File tree / tab bar / editor area all missing |
-| 44 | Error / notification toasts | ❌ | |
-| 45 | Loading states / skeletons | ❌ | |
-| 46 | Internationalization (i18n) | ❌ | |
-| 47 | Responsive / mobile adaptation | ❌ | |
-| 48 | Automated testing (unit / e2e) | ❌ | No test framework configured |
-| 49 | ESLint / Prettier config | ❌ | Dependencies installed, no config files |
-| 50 | Session restore (reopen tabs on restart) | ❌ | |
+| # | 功能 | 状态 | 说明 |
+|---|------|------|------|
+| 41 | 自适应布局 (可拖拽分隔条) | ✅ | `MainLayout.vue` — 侧边栏宽度可调 |
+| 42 | 状态栏 (光标位置、语言、编码) | ⚠️ | Monaco 编辑器内置状态栏已提供行/列/语言信息; 无自定义实现 |
+| 43 | 右键上下文菜单 | ❌ | 文件树 / Tab 栏 / 编辑区均无 |
+| 44 | 错误/通知提示 (Toast) | ❌ | `useFileSystem.error` 有定义但未被任何 UI 渲染 |
+| 45 | 加载状态 / 骨架屏 | ⚠️ | 文件树及 Agent 面板已有文本型 "Loading..." 提示; 无骨架屏/动画 |
+| 46 | 国际化 (i18n) | ❌ | |
+| 47 | 响应式 / 移动端适配 | ❌ | 仅有 `<meta viewport>` 标签, 无 @media 查询 |
+| 48 | 自动化测试 (unit / e2e) | ❌ | 无测试框架配置 |
+| 49 | ESLint / Prettier 配置 | ❌ | 依赖已安装, 无配置文件 (lint 命令执行会失败) |
+| 50 | 会话恢复 (重启后恢复 Tab) | ❌ | Pinia store 纯内存, 刷新即丢失 |
 
-### Summary
+### 统计
 
-| Status | Count |
-|--------|-------|
-| ✅ Done | 19 |
-| ⚠️ Scaffold ready | 12 |
-| ❌ Not started | 19 |
-| **Total** | **50** |
+| 状态 | 数量 |
+|------|------|
+| ✅ 已完成 | 19 |
+| ⚠️ 框架就绪 | 11 |
+| ❌ 未开始 | 20 |
+| **合计** | **50** |
 
-## Architecture
+## 架构设计
 
 ```
 VibeEditor/
 ├── packages/
-│   ├── core/           # Shared core: file system abstraction, editor state, agent framework
-│   ├── server/         # Express backend: file operations API, agent API
-│   ├── web/            # Vue 3 + Vite + Monaco Editor frontend
-│   └── electron/       # Electron shell: native file system via IPC
-├── package.json        # Root workspace config
-├── tsconfig.json       # Project references
-└── tsconfig.base.json  # Shared TypeScript config
+│   ├── core/           # 共享核心: 文件系统抽象、编辑器状态、Agent 框架
+│   ├── server/         # Express 后端: 文件操作 API、Agent API
+│   ├── web/            # Vue 3 + Vite + Monaco Editor 前端
+│   └── electron/       # Electron 壳: 通过 IPC 访问本地文件系统
+├── package.json        # 根工作区配置 (npm workspaces)
+├── tsconfig.json       # 项目引用
+└── tsconfig.base.json  # 共享 TypeScript 配置
 ```
 
-## Quick Start
+## 快速开始
 
 ```bash
-# Install dependencies
+# 安装依赖
 npm install
 
-# Start server + web frontend simultaneously
+# 同时启动服务器和前端
 npm run dev:all
 
-# Or start individually
-npm run dev:server   # Backend on http://localhost:3456
-npm run dev:web      # Frontend on http://localhost:5173
+# 或分别启动
+npm run dev:server   # 后端运行在 http://localhost:3456
+npm run dev:web      # 前端运行在 http://localhost:5173
 ```
 
-## Deployment Modes
+## 部署模式
 
-| Mode | File System | Command |
-|------|------------|---------|
-| **Electron** desktop | Local FS via IPC (`Node.js fs`) | `npm run dev:electron` |
-| **Server** (remote files) | Server FS via REST API | `npm run dev:server` + `npm run dev:web` |
-| **Browser** (local files) | File System Access API | `npm run dev:web` |
+| 模式 | 文件系统 | 启动命令 |
+|------|---------|---------|
+| **Electron** 桌面端 | 本地 FS, 通过 IPC (`Node.js fs`) | `npm run dev:electron` |
+| **Server** 部署 (远程文件) | Server FS, 通过 REST API | `npm run dev:server` + `npm run dev:web` |
+| **Browser** 本地文件 | File System Access API | `npm run dev:web` |
 
-The frontend auto-detects the runtime environment and selects the appropriate file service at `packages/web/src/services/fileService.ts`.
+前端会在运行时自动检测环境, 在 `packages/web/src/services/fileService.ts` 中选择合适的文件服务。
 
-## Build
+## 构建
 
 ```bash
-npm run build:core      # Build shared core
-npm run build:server    # Build Express backend
-npm run build:web       # Build Vue frontend (to packages/web/dist/)
-npm run build:electron  # Build Electron main process
-npm run build:all       # Build everything
+npm run build:core      # 构建共享核心
+npm run build:server    # 构建 Express 后端
+npm run build:web       # 构建 Vue 前端 (输出到 packages/web/dist/)
+npm run build:electron  # 构建 Electron 主进程
+npm run build:all       # 构建所有包 (core → web → server → electron)
 ```
 
-## Server API
+## 服务端 API
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/files/list?path=` | List directory contents |
-| GET | `/api/files/read?path=` | Read file content |
-| POST | `/api/files/write` | Write file `{ path, content }` |
-| DELETE | `/api/files/delete?path=` | Delete file |
-| POST | `/api/files/mkdir` | Create directory `{ path }` |
-| DELETE | `/api/files/rmdir?path=` | Remove directory |
-| GET | `/api/files/exists?path=` | Check path exists |
-| GET | `/api/files/stat?path=` | Get file/dir metadata |
-| POST | `/api/files/rename` | Rename `{ oldPath, newPath }` |
-| POST | `/api/agent/chat` | Send message to agent |
-| POST | `/api/agent/stream` | Stream agent response (SSE) |
-| GET | `/api/health` | Health check |
+| 方法 | 端点 | 说明 |
+|------|------|------|
+| GET | `/api/files/list?path=` | 列出目录内容 |
+| GET | `/api/files/read?path=` | 读取文件内容 |
+| POST | `/api/files/write` | 写入文件 `{ path, content }` |
+| DELETE | `/api/files/delete?path=` | 删除文件 |
+| POST | `/api/files/mkdir` | 创建目录 `{ path }` |
+| DELETE | `/api/files/rmdir?path=` | 删除目录 |
+| GET | `/api/files/exists?path=` | 检查路径是否存在 |
+| GET | `/api/files/stat?path=` | 获取文件/目录元数据 |
+| POST | `/api/files/rename` | 重命名 `{ oldPath, newPath }` |
+| POST | `/api/agent/chat` | 发送消息给 Agent |
+| POST | `/api/agent/stream` | 流式返回 Agent 响应 (SSE) |
+| GET | `/api/health` | 健康检查 |
 
-## Project Structure
+## 项目结构
 
 ### `@vibeeditor/core`
-- `fs/types.ts` — `IFileSystem` interface, `FileEntry`, `FileContent`
+- `fs/types.ts` — `IFileSystem` 接口, `FileEntry`, `FileContent`
 - `fs/local.ts` — `LocalFileSystem` (Node.js fs)
-- `fs/server.ts` — `ServerFileSystem` (REST client)
-- `fs/virtual.ts` — `VirtualFileSystem` (in-memory)
-- `editor/types.ts` — `EditorTab`, `EditOperation`, language detection
-- `editor/document.ts` — Tab/document state management
+- `fs/server.ts` — `ServerFileSystem` (REST 客户端)
+- `fs/virtual.ts` — `VirtualFileSystem` (内存文件系统)
+- `editor/types.ts` — `EditorTab`, `EditOperation`, 语言检测
+- `editor/document.ts` — Tab/文档状态管理
 - `agent/types.ts` — `AgentContext`, `AgentEditResult`, `IAgentProvider`
-- `agent/context.ts` — Context builder for LLM prompts
-- `agent/executor.ts` — Edit operation executor with undo support
+- `agent/context.ts` — 为 LLM 提示词构建上下文
+- `agent/executor.ts` — 编辑操作执行器, 支持撤销
 
 ### `@vibeeditor/web`
-- `components/editor/MonacoEditor.vue` — Monaco editor wrapper
-- `components/file-tree/FileTree.vue` — File tree sidebar
-- `components/toolbar/Toolbar.vue` — Top toolbar
-- `components/agent/AgentPanel.vue` — AI chat panel
-- `components/layout/MainLayout.vue` — Resizable layout
-- `composables/useFileSystem.ts` — File operations + keyboard shortcuts
-- `composables/useEditor.ts` — Monaco editor instance management
-- `composables/useAgent.ts` — Agent chat state
-- `stores/editor.ts` — Pinia store for editor/tabs state
+- `components/editor/MonacoEditor.vue` — Monaco 编辑器封装
+- `components/file-tree/FileTree.vue` — 文件树侧边栏
+- `components/toolbar/Toolbar.vue` — 顶部工具栏
+- `components/agent/AgentPanel.vue` — AI 对话面板
+- `components/layout/MainLayout.vue` — 可拖拽分隔布局
+- `composables/useFileSystem.ts` — 文件操作 + 键盘快捷键
+- `composables/useEditor.ts` — Monaco 编辑器实例管理
+- `composables/useAgent.ts` — Agent 对话状态
+- `stores/editor.ts` — Pinia 编辑器/Tab 状态 Store
+- `services/agentService.ts` — Agent REST/SSE 客户端
+- `services/fileService.ts` — 运行时环境检测 + 文件服务选择
 
 ### `@vibeeditor/server`
-- `routes/files.ts` — File CRUD API with path traversal protection
-- `routes/agent.ts` — Agent chat + streaming endpoints
-- `middleware/auth.ts` — Optional Bearer token auth
+- `routes/files.ts` — 文件 CRUD API, 含路径遍历防护
+- `routes/agent.ts` — Agent 对话 + 流式端点
+- `agent/provider.ts` — OpenAI 兼容 LLM Provider (raw fetch)
+- `middleware/auth.ts` — 可选 Bearer Token 认证
 
 ### `@vibeeditor/electron`
-- `main.ts` — Window creation, dev/production mode switching
-- `preload.ts` — Context bridge exposing `window.electronAPI`
-- `ipc/file-handler.ts` — Native file dialogs and FS operations
+- `main.ts` — 窗口创建, dev/production 模式切换
+- `preload.ts` — Context Bridge 暴露 `window.electronAPI`
+- `ipc/file-handler.ts` — 原生文件对话框和文件系统操作
