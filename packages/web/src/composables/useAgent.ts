@@ -70,7 +70,7 @@ function buildAgentContext(activeFilePath?: string): AgentContext {
 export function useAgent() {
   const messages = ref<ChatMessage[]>([]);
   const isProcessing = ref(false);
-  const config = ref<AgentConfig>({ mode: 'chat' });
+  const config = ref<AgentConfig>({ mode: 'plan' });
   const service = createAgentService();
   const lastEdits = ref<ParsedEdit[]>([]);
   const toolStatus = ref<string>('');
@@ -86,7 +86,7 @@ export function useAgent() {
   }
 
   function extractEdits(msg: ChatMessage) {
-    if (config.value.mode === 'edit' || config.value.mode === 'agent') {
+    if (config.value.mode === 'build') {
       const edits = parseEditsFromText(msg.content);
       if (edits.length > 0) {
         msg.editOperations = edits;

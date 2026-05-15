@@ -95,7 +95,7 @@ const providerSettings = useProviderSettings();
 const editorStore = useEditorStore();
 const input = ref('');
 const messagesContainer = ref<HTMLElement>();
-const modes = ['chat', 'edit', 'agent'] as const;
+const modes = ['build', 'plan'] as const;
 const showSettings = ref(false);
 
 // 自动滚动控制

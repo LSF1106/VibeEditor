@@ -16,29 +16,17 @@ function getLLMConfig(config: AgentConfig): LLMConfig {
   };
 }
 
-// 根据 Agent 模式构建不同的系统提示词
-// chat: 纯对话模式，不涉及文件编辑
-// edit: 输出带 <edit> 标签的完整文件内容，前端可解析并应用
-// agent: 自主跨文件编辑模式，可链式输出多个 <edit> 块
+// plan: 只读对话模式，不涉及文件编辑
+// build: 编辑模式，可读写文件、执行工具、输出 <edit> 块
 function buildSystemPrompt(config: AgentConfig, context: AgentContext): string {
   const base = `You are an AI code editor assistant. You help the user write, edit, and understand code.
 
 Current mode: ${config.mode}`;
 
   const modeInstructions: Record<string, string> = {
-    chat: `You are in chat mode. Answer questions, explain code, and discuss ideas. Do NOT try to edit files directly.`,
-    edit: [
-      'You are in edit mode. When the user asks you to modify code, respond with the complete updated file content wrapped in edit blocks:',
-      '',
-      '<edit path="relative/path/to/file.ext">',
-      '```language',
-      '// complete new file content here',
-      '```',
-      '</edit>',
-      '',
-      'You can include multiple <edit> blocks for multiple files. Explain your changes before or after the edit blocks.',
-    ].join('\n'),
-    agent: [
+    plan: `You are in plan mode. Answer questions, explain code, and discuss ideas. Do NOT try to edit files directly.`,
+
+    build: [
       'You are an autonomous coding agent. Your goal is to understand, plan, and execute code changes across multiple files.',
       '',
       '## Available Tools',
@@ -76,7 +64,7 @@ Current mode: ${config.mode}`;
     ].join('\n'),
   };
 
-  return base + '\n\n' + (modeInstructions[config.mode] || modeInstructions.chat);
+  return base + '\n\n' + (modeInstructions[config.mode] || modeInstructions.plan);
 }
 
 // 构建发送给 LLM 的完整消息列表
@@ -140,7 +128,7 @@ export class OpenAILikeProvider implements IAgentProvider {
   async sendMessage(message: string, context: AgentContext): Promise<AgentMessage> {
     if (!this.llmConfig) throw new Error('Provider not initialized');
 
-    const cfg = this.agentConfig || { mode: 'chat' as const };
+    const cfg = this.agentConfig || { mode: 'plan' as const };
     const messages = buildMessages(cfg, message, context);
 
     const response = await fetch(`${this.llmConfig.apiUrl}/chat/completions`, {
@@ -182,7 +170,7 @@ export class OpenAILikeProvider implements IAgentProvider {
   ): Promise<AgentMessage> {
     if (!this.llmConfig) throw new Error('Provider not initialized');
 
-    const cfg = this.agentConfig || { mode: 'chat' as const };
+    const cfg = this.agentConfig || { mode: 'plan' as const };
     const messages = buildMessages(cfg, message, context);
 
     const response = await fetch(`${this.llmConfig.apiUrl}/chat/completions`, {

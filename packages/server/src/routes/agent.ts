@@ -137,7 +137,7 @@ async function executeSearchCode(rootPath: string, pattern: string, searchPath?:
 
 function buildAgentConfig(body: Record<string, unknown>): AgentConfig {
   return {
-    mode: (body.config as any)?.mode || (body as any).mode || 'chat',
+    mode: (body.config as any)?.mode || (body as any).mode || 'plan',
     model: (body.config as any)?.model || (body as any).model,
     apiUrl: (body.config as any)?.apiUrl || (body as any).apiUrl,
     apiKey: (body.config as any)?.apiKey || (body as any).apiKey,
@@ -194,7 +194,7 @@ router.post('/stream', async (req: Request, res: Response) => {
   await provider.initialize(config);
 
   try {
-    if (config.mode === 'agent') {
+    if (config.mode === 'build') {
       await runAgentLoop(provider, config, message, context as AgentContext, rootPath, writeSSE);
     } else {
       const response = await provider.streamMessage(

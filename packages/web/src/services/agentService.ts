@@ -6,7 +6,7 @@ export interface AgentMessage {
 }
 
 export interface AgentConfig {
-  mode: 'chat' | 'edit' | 'agent';
+  mode: 'build' | 'plan';
   model?: string;
   apiUrl?: string;
   apiKey?: string;
