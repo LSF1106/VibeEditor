@@ -21,9 +21,14 @@ export function useFileSystem() {
   const env = detectEnvironment();
 
   let saveAsHandler: (() => Promise<string | null>) | null = null;
+  let onAfterSave: (() => void) | null = null;
 
   function setSaveAsHandler(handler: () => Promise<string | null>) {
     saveAsHandler = handler;
+  }
+
+  function setOnAfterSave(callback: () => void) {
+    onAfterSave = callback;
   }
 
   if (env === 'browser' || env === 'server') {
@@ -93,6 +98,8 @@ export function useFileSystem() {
 
       await client.writeFile(savePath, tab.content);
       store.saveTab(tab.id);
+      await loadDirectory('.');
+      onAfterSave?.();
     } catch (e: any) {
       error.value = e.message;
     }
@@ -220,5 +227,6 @@ export function useFileSystem() {
     openLocalFile,
     connectToServer,
     setSaveAsHandler,
+    setOnAfterSave,
   };
 }

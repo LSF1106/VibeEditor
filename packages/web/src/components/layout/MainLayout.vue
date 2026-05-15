@@ -80,7 +80,7 @@
     </div>
     <SaveDialog
       v-if="showSaveDialog"
-      :client="fs.client.value"
+      :client="fs.client"
       :default-name="saveDialogDefaultName"
       :workspace-root="store.workspaceRoot"
       @confirm="onSaveDialogConfirm"
@@ -137,6 +137,7 @@ function onSaveDialogCancel() {
 }
 
 fs.setSaveAsHandler(handleSaveFileAs);
+fs.setOnAfterSave(clearDirState);
 
 function clearDirState() {
   expandedDirs.value = new Set();
