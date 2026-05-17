@@ -18,7 +18,7 @@
 | 4 | 打开文件夹 (目录树) | ✅ | Electron `showOpenDialog` + Server `/api/files/list` 已通; 浏览器端未完成 |
 | 5 | 文件保存 (Ctrl+S) | ✅ | Electron IPC + Server API 均已实现 |
 | 6 | 新建无标题文件 | ✅ | `store.newUntitled()` |
-| 7 | 键盘快捷键 | ⚠️ | 已绑定 Ctrl+S、Ctrl+C、Ctrl+V（自定义复制/粘贴）; Electron 菜单快捷键 IPC 桥接就绪但未接入; 缺少完整快捷键体系 |
+| 7 | 键盘快捷键 | ⚠️ | 已绑定包含了复制（ctrl+c）、粘贴（ctrl+v）、剪切（ctrl+x）、撤销（ctrl+z）、恢复（ctrl+y）、查找（ctrl+f）、替换（ctrl+h）; Electron 菜单快捷键 IPC 桥接就绪但未接入; 缺少完整快捷键体系 |
 
 ### P1 — AI Agent 辅助编辑
 

@@ -155,6 +155,19 @@ export function useFileSystem() {
     }
   }
 
+  async function createFolder() {
+    error.value = null;
+    const name = prompt('Folder name:')?.trim();
+    if (!name) return;
+    try {
+      const client = getClient();
+      await client.createDir(name);
+      onAfterSave?.(name);
+    } catch (e: any) {
+      error.value = e.message;
+    }
+  }
+
   async function openLocalFolder() {
     error.value = null;
     try {
@@ -290,6 +303,74 @@ export function useFileSystem() {
       }
       return;
     }
+
+    if (ctrl && e.key === 'x') {
+      if (!isInputFocused()) {
+        const editor = getEditorInstance();
+        if (editor && !editor.hasTextFocus()) {
+          e.preventDefault();
+          const selection = editor.getSelection();
+          if (selection && !selection.isEmpty()) {
+            const model = editor.getModel();
+            if (model) {
+              const text = model.getValueInRange(selection);
+              navigator.clipboard.writeText(text).then(() => {
+                editor.executeEdits('clipboard-cut', [
+                  { range: selection, text: '' },
+                ]);
+              }).catch(() => {});
+            }
+          }
+        }
+      }
+      return;
+    }
+
+    if (ctrl && e.key === 'z') {
+      if (!isInputFocused()) {
+        const editor = getEditorInstance();
+        if (editor) {
+          e.preventDefault();
+          editor.trigger('keyboard', 'undo', null);
+        }
+      }
+      return;
+    }
+
+    if (ctrl && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
+      if (!isInputFocused()) {
+        const editor = getEditorInstance();
+        if (editor) {
+          e.preventDefault();
+          editor.trigger('keyboard', 'redo', null);
+        }
+      }
+      return;
+    }
+
+    if (ctrl && e.key === 'f') {
+      if (!isInputFocused()) {
+        const editor = getEditorInstance();
+        if (editor) {
+          e.preventDefault();
+          editor.focus();
+          editor.getAction('actions.find')?.run();
+        }
+      }
+      return;
+    }
+
+    if (ctrl && e.key === 'h') {
+      if (!isInputFocused()) {
+        const editor = getEditorInstance();
+        if (editor) {
+          e.preventDefault();
+          editor.focus();
+          editor.getAction('editor.action.startFindReplaceAction')?.run();
+        }
+      }
+      return;
+    }
   };
 
   onMounted(() => window.addEventListener('keydown', handleKeydown));
@@ -310,6 +391,7 @@ export function useFileSystem() {
     connectToServer,
     deleteFile,
     undoDelete,
+    createFolder,
     lastDeleted,
     showUndoNotification,
     setSaveAsHandler,
