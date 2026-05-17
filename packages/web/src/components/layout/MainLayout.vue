@@ -73,12 +73,15 @@
           </div>
         </div>
       </div>
-      <!-- Agent 面板拖拽手柄 -->
       <div v-if="showAgent" class="agent-resize-handle" @mousedown="startAgentResize"></div>
       <div v-if="showAgent" class="agent-sidebar" :style="{ width: agentWidth + 'px' }">
         <AgentPanel @apply-edits="handleApplyEdits" />
       </div>
     </div>
+    <StatusBar
+      :active-tab="store.activeTab"
+      :workspace-mode="store.workspaceMode"
+    />
     <SaveDialog
       v-if="showSaveDialog"
       :client="fs.client"
@@ -105,6 +108,7 @@ import FileTree from '../file-tree/FileTree.vue';
 import MonacoEditor from '../editor/MonacoEditor.vue';
 import AgentPanel from '../agent/AgentPanel.vue';
 import SaveDialog from '../SaveDialog.vue';
+import StatusBar from '../StatusBar.vue';
 
 const store = useEditorStore();
 const fs = reactive(useFileSystem());
@@ -226,7 +230,7 @@ function startSidebarResize(e: MouseEvent) {
   document.addEventListener('mouseup', onUp);
 }
 
-// Agent 面板宽度拖拽（向左拖拽手柄）
+// Agent 面板宽度拖拽
 function startAgentResize(e: MouseEvent) {
   isResizingAgent = true;
   const startX = e.clientX;
@@ -234,7 +238,6 @@ function startAgentResize(e: MouseEvent) {
 
   const onMove = (ev: MouseEvent) => {
     if (!isResizingAgent) return;
-    // 向左拖拽增加宽度，向右减小
     agentWidth.value = Math.max(200, Math.min(600, startWidth - (ev.clientX - startX)));
   };
 

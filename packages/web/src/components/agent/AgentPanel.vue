@@ -53,14 +53,19 @@
       <div v-if="agent.isProcessing.value" class="agent-loading">Thinking...</div>
     </div>
 
+    <!-- 输入区域拖拽手柄 -->
+    <div class="input-resize-handle" @mousedown="startInputResize"></div>
+
     <!-- 输入区域 -->
-    <div class="agent-input-area">
+    <div class="agent-input-area" :style="{ height: inputHeight + 'px' }">
       <textarea
         v-model="input"
         class="agent-input"
         placeholder="Ask the agent..."
         rows="2"
         @keydown.enter.exact.prevent="send"
+        @keydown.ctrl.enter.prevent="send"
+        @keydown.meta.enter.prevent="send"
       ></textarea>
       <button class="agent-send-btn" @click="send" :disabled="!input.trim() || agent.isProcessing.value">
         Send
@@ -90,6 +95,8 @@ const input = ref('');
 const messagesContainer = ref<HTMLElement>();
 const modes = ['chat', 'edit', 'agent'] as const;
 const showSettings = ref(false);
+const inputHeight = ref(90);
+let isResizingInput = false;
 
 // 自动滚动控制
 const userScrolledUp = ref(false);
@@ -163,6 +170,27 @@ async function send() {
   }
 
   scheduleScroll(true);
+}
+
+// 输入区域高度拖拽
+function startInputResize(e: MouseEvent) {
+  isResizingInput = true;
+  const startY = e.clientY;
+  const startHeight = inputHeight.value;
+
+  const onMove = (ev: MouseEvent) => {
+    if (!isResizingInput) return;
+    inputHeight.value = Math.max(60, Math.min(320, startHeight - (ev.clientY - startY)));
+  };
+
+  const onUp = () => {
+    isResizingInput = false;
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+  };
+
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
 }
 
 onMounted(() => {
@@ -385,6 +413,18 @@ onUnmounted(() => {
   gap: 6px;
   padding: 8px;
   border-top: 1px solid var(--border-color);
+  flex-shrink: 0;
+  overflow: hidden;
+}
+.input-resize-handle {
+  height: 3px;
+  cursor: row-resize;
+  background: var(--border-color);
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+.input-resize-handle:hover {
+  background: var(--accent-color);
 }
 .agent-input {
   flex: 1;

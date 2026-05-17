@@ -221,16 +221,30 @@ export function useFileSystem() {
     }
   }
 
+  function isInputFocused(): boolean {
+    const el = document.activeElement;
+    if (!el) return false;
+    const editor = getEditorInstance();
+    if (editor?.hasTextFocus()) return false;
+    const tag = el.tagName.toLowerCase();
+    return tag === 'input' || tag === 'textarea' || tag === 'select' || (el as HTMLElement).isContentEditable;
+  }
+
   const handleKeydown = (e: KeyboardEvent) => {
-    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-      e.preventDefault();
-      saveCurrentFile();
+    const ctrl = e.ctrlKey || e.metaKey;
+
+    if (ctrl && e.key === 's') {
+      if (!isInputFocused()) {
+        e.preventDefault();
+        saveCurrentFile();
+      }
+      return;
     }
 
-    if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
-      const editor = getEditorInstance();
-      if (!editor || !editor.hasTextFocus()) {
-        if (editor) {
+    if (ctrl && e.key === 'c') {
+      if (!isInputFocused()) {
+        const editor = getEditorInstance();
+        if (editor && !editor.hasTextFocus()) {
           const selection = editor.getSelection();
           if (selection && !selection.isEmpty()) {
             const model = editor.getModel();
@@ -241,12 +255,13 @@ export function useFileSystem() {
           }
         }
       }
+      return;
     }
 
-    if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
-      const editor = getEditorInstance();
-      if (!editor || !editor.hasTextFocus()) {
-        if (editor) {
+    if (ctrl && e.key === 'v') {
+      if (!isInputFocused()) {
+        const editor = getEditorInstance();
+        if (editor && !editor.hasTextFocus()) {
           e.preventDefault();
           navigator.clipboard.readText().then((text) => {
             if (text) {
@@ -257,6 +272,23 @@ export function useFileSystem() {
           }).catch(() => {});
         }
       }
+      return;
+    }
+
+    if (ctrl && e.key === 'n') {
+      if (!isInputFocused()) {
+        e.preventDefault();
+        store.newUntitled();
+      }
+      return;
+    }
+
+    if (ctrl && e.key === 'w') {
+      if (!isInputFocused()) {
+        e.preventDefault();
+        if (store.activeTab) store.closeTab(store.activeTab.id);
+      }
+      return;
     }
   };
 
