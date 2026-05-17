@@ -97,19 +97,211 @@
 | ❌ 未开始 | 20 |
 | **合计** | **50** |
 
-## 架构设计
+## 架构文档
 
+### 1. 架构图 — 包依赖与部署拓扑
+
+```mermaid
+graph TB
+    subgraph Packages["npm Workspace 包"]
+        core["@vibeeditor/core<br/>共享类型 / FS抽象 / Agent框架"]
+        server["@vibeeditor/server<br/>Express · REST API"]
+        web["@vibeeditor/web<br/>Vue 3 · Vite · Monaco"]
+        electron["@vibeeditor/electron<br/>Electron 壳 · IPC 桥接"]
+    end
+
+    subgraph Runtime["运行时环境"]
+        browser["Browser<br/>File System Access API"]
+        node_srv["Node.js 服务器<br/>本地 / 远程文件"]
+        desktop["Electron 桌面<br/>原生 fs 对话框"]
+    end
+
+    core --> server
+    core --> web
+    core --> electron
+    web -.->|dev proxy /api → :3456| server
+    electron -->|加载 web/dist 或 Vite dev URL| web
+    server -->|SERVE_STATIC 时提供| web
+    electron -->|IPC invoke| desktop
+    server -->|fs 操作| node_srv
+    web -->|File System Access API| browser
 ```
-VibeEditor/
-├── packages/
-│   ├── core/           # 共享核心: 文件系统抽象、编辑器状态、Agent 框架
-│   ├── server/         # Express 后端: 文件操作 API、Agent API
-│   ├── web/            # Vue 3 + Vite + Monaco Editor 前端
-│   └── electron/       # Electron 壳: 通过 IPC 访问本地文件系统
-├── package.json        # 根工作区配置 (npm workspaces)
-├── tsconfig.json       # 项目引用
-└── tsconfig.base.json  # 共享 TypeScript 配置
+
+**说明**：`@vibeeditor/core` 是所有包的类型与逻辑基础。前端 `web` 在开发时通过 Vite proxy 将 `/api` 转发到 `server`；Electron 模式下前端由 Electron 窗口加载，文件操作通过 `preload.ts` 暴露的 IPC 桥接到主进程的 Node.js `fs`。
+
+### 2. 流程图
+
+#### 2.1 运行时环境检测与文件服务选择
+
+```mermaid
+flowchart TD
+    A["应用启动"] --> B{"window.electronAPI<br/>是否存在?"}
+    B -->|是| C["env = 'electron'<br/>使用 Electron IPC 客户端"]
+    B -->|否| D{"window.showDirectoryPicker<br/>是否存在?"}
+    D -->|是| E["env = 'browser'<br/>使用 File System Access API"]
+    D -->|否| F["env = 'server'<br/>使用 REST API 客户端"]
+    C --> G["fileService.ts 返回对应 FileServiceClient"]
+    E --> G
+    F --> G
+    G --> H["useFileSystem() 初始化<br/>暴露 client / error / env"]
 ```
+
+**说明**：`detectEnvironment()` 在 `fileService.ts:22` 中一次性检测并缓存运行时环境，后续所有文件操作通过统一的 `FileServiceClient` 接口执行，上层组件不感知底层差异。
+
+#### 2.2 Agent 编辑操作流程
+
+```mermaid
+flowchart TD
+    U["用户输入消息"] --> S["Server POST /api/agent/stream<br/>SSE 流式响应"]
+    S --> P["前端 stream 解析<br/>提取 &lt;edit&gt; 区块"]
+    P --> E["handleApplyEdits(edits)"]
+    E --> BK["备份原始文件内容到 editSnapshots<br/>记录到 lastEditedFiles"]
+    BK --> W["fs.client.writeFile()<br/>写入 AI 生成的新内容"]
+    W --> T["更新已打开 Tab<br/>或自动打开文件"]
+    T --> R["刷新文件树"]
+    R --> DONE["完成"]
+```
+
+**说明**：Agent 的每一次编辑操作在写入磁盘前都会自动备份原文件内容，使得用户可以通过 `undoLastEdits()` 一键回退所有修改。
+
+### 3. 时序图 — Agent 编辑 & 撤销
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant AgentPanel
+    participant MainLayout
+    participant useFileSystem as useFileSystem<br/>(reactive)
+    participant Server
+    participant EditorStore
+
+    User->>AgentPanel: 发送消息
+    AgentPanel->>Server: POST /api/agent/stream
+    Server-->>AgentPanel: SSE 流式 chunks
+    AgentPanel->>AgentPanel: 解析 <edit> 区块 → ParsedEdit[]
+    AgentPanel->>MainLayout: @apply-edits(edits)
+
+    loop 每个 edit
+        MainLayout->>MainLayout: 解析 resolvedPath
+        MainLayout->>useFileSystem: fs.client.readFile(resolvedPath)
+        useFileSystem-->>MainLayout: original content
+        MainLayout->>MainLayout: editSnapshots.set(path, original)
+        MainLayout->>useFileSystem: fs.client.writeFile(resolvedPath, edit.content)
+        useFileSystem-->>MainLayout: ok
+        MainLayout->>EditorStore: updateContent / openFile
+        MainLayout->>useFileSystem: fs.loadDirectory('.')
+    end
+
+    User->>AgentPanel: 点击 Undo
+    AgentPanel->>MainLayout: @undo-edits()
+
+    loop lastEditedFiles
+        MainLayout->>MainLayout: editSnapshots.get(filePath)
+        MainLayout->>useFileSystem: fs.client.writeFile(filePath, original)
+        useFileSystem-->>MainLayout: ok
+        MainLayout->>EditorStore: updateContent + saveTab
+    end
+```
+
+**说明**：`handleApplyEdits` 在每次写入前先读取原文做快照；`undoLastEdits` 遍历 `lastEditedFiles` 逐一恢复。`fs` 由 `reactive(useFileSystem())` 创建，Vue 3 的 `reactive()` 自动解包嵌套 `ref`，因此访问时直接使用 `fs.client` 而非 `fs.client.value`。
+
+### 4. 类图 — 核心类型体系
+
+```mermaid
+classDiagram
+    class IFileSystem {
+        <<interface>>
+        +type: 'local'|'server'|'virtual'
+        +cwd: string
+        +readFile(path) Promise~string~
+        +writeFile(path, content) Promise~void~
+        +deleteFile(path) Promise~void~
+        +readDir(path) Promise~FileEntry[]
+        +createDir(path) Promise~void~
+        +exists(path) Promise~boolean~
+        +stat(path) Promise~FileEntry~
+        +rename(oldPath, newPath) Promise~void~
+        +dispose() void
+    }
+
+    class LocalFileSystem {
+        +type: 'local'
+        +实现: Node.js fs/promises
+    }
+
+    class ServerFileSystem {
+        +type: 'server'
+        +实现: REST fetch /api/files/*
+    }
+
+    class VirtualFileSystem {
+        +type: 'virtual'
+        +实现: 内存 Map
+    }
+
+    class FileServiceClient {
+        <<interface>>
+        +readFile/writeFile/deleteFile()
+        +readDir/createDir/deleteDir()
+        +exists/stat/rename()
+        +openFolder/openFile/saveFileAs()
+    }
+
+    class IAgentProvider {
+        <<interface>>
+        +name: string
+        +initialize(config) Promise~void~
+        +sendMessage(msg, ctx) Promise~AgentMessage~
+        +streamMessage(msg, ctx, onChunk) Promise~AgentMessage~
+    }
+
+    IFileSystem <|.. LocalFileSystem
+    IFileSystem <|.. ServerFileSystem
+    IFileSystem <|.. VirtualFileSystem
+    FileServiceClient <|.. ElectronClient
+    FileServiceClient <|.. ServerClient
+    FileServiceClient <|.. BrowserClient
+
+    class EditorTab {
+        +id: string
+        +name: string
+        +path: string
+        +content: string
+        +language: string
+        +isDirty: boolean
+        +isUntitled: boolean
+    }
+
+    class EditorStore {
+        +tabs: EditorTab[]
+        +activeTabId: string
+        +fileTreeNodes: FileEntry[]
+        +workspaceRoot: string
+        +workspaceMode: string
+        +openFile(path, content)
+        +closeTab(id)
+        +updateContent(id, content)
+        +saveTab(id)
+    }
+
+    class AgentContext {
+        +openFiles: path[] | content[]
+        +fileTree: string[]
+        +cursorPosition
+        +selection
+        +conversationHistory: AgentMessage[]
+    }
+
+    class AgentMessage {
+        +id: string
+        +role: 'user'|'assistant'|'system'
+        +content: string
+        +timestamp: number
+        +editOperations: AgentEditResult[]
+    }
+```
+
+**说明**：`IFileSystem` 是底层文件系统抽象，3 种实现覆盖本地 / 远程 / 内存场景。`FileServiceClient` 是前端统一的服务接口，在 `fileService.ts` 中根据运行时环境选择 Electron IPC / REST / File System Access API 三种客户端。`EditorStore`（Pinia）是前端唯一状态源，管理 Tab、文件树和工作区元数据。
 
 ## 快速开始
 
