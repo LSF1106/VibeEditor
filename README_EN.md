@@ -97,19 +97,211 @@ AI-powered code editor built with **Monaco Editor** + **Vue 3**, supporting both
 | ❌ Not started | 20 |
 | **Total** | **50** |
 
-## Architecture
+## Architecture Docs
 
+### 1. Architecture Diagram — Package Dependencies & Deployment Topology
+
+```mermaid
+graph TB
+    subgraph Packages["npm Workspace Packages"]
+        core["@vibeeditor/core<br/>Shared Types / FS Abstraction / Agent Framework"]
+        server["@vibeeditor/server<br/>Express · REST API"]
+        web["@vibeeditor/web<br/>Vue 3 · Vite · Monaco"]
+        electron["@vibeeditor/electron<br/>Electron Shell · IPC Bridge"]
+    end
+
+    subgraph Runtime["Runtime Environments"]
+        browser["Browser<br/>File System Access API"]
+        node_srv["Node.js Server<br/>Local / Remote Files"]
+        desktop["Electron Desktop<br/>Native FS Dialogs"]
+    end
+
+    core --> server
+    core --> web
+    core --> electron
+    web -.->|dev proxy /api → :3456| server
+    electron -->|loads web/dist or Vite dev URL| web
+    server -->|serves when SERVE_STATIC| web
+    electron -->|IPC invoke| desktop
+    server -->|FS operations| node_srv
+    web -->|File System Access API| browser
 ```
-VibeEditor/
-├── packages/
-│   ├── core/           # Shared core: file system abstraction, editor state, agent framework
-│   ├── server/         # Express backend: file operations API, agent API
-│   ├── web/            # Vue 3 + Vite + Monaco Editor frontend
-│   └── electron/       # Electron shell: native file system via IPC
-├── package.json        # Root workspace config
-├── tsconfig.json       # Project references
-└── tsconfig.base.json  # Shared TypeScript config
+
+**Note**: `@vibeeditor/core` is the type and logic foundation for all packages. The `web` frontend proxies `/api` to `server` via Vite in development. In Electron mode, the frontend is loaded by the Electron window, and file operations are bridged to the main process Node.js `fs` through `preload.ts` IPC.
+
+### 2. Flowcharts
+
+#### 2.1 Runtime Environment Detection & File Service Selection
+
+```mermaid
+flowchart TD
+    A["App Startup"] --> B{"window.electronAPI<br/>exists?"}
+    B -->|Yes| C["env = 'electron'<br/>Use Electron IPC client"]
+    B -->|No| D{"window.showDirectoryPicker<br/>exists?"}
+    D -->|Yes| E["env = 'browser'<br/>Use File System Access API"]
+    D -->|No| F["env = 'server'<br/>Use REST API client"]
+    C --> G["fileService.ts returns<br/>corresponding FileServiceClient"]
+    E --> G
+    F --> G
+    G --> H["useFileSystem() initializes<br/>exposes client / error / env"]
 ```
+
+**Note**: `detectEnvironment()` in `fileService.ts:22` detects and caches the runtime environment once. All subsequent file operations go through the unified `FileServiceClient` interface; upper-layer components are unaware of the underlying differences.
+
+#### 2.2 Agent Edit Operation Flow
+
+```mermaid
+flowchart TD
+    U["User enters message"] --> S["Server POST /api/agent/stream<br/>SSE streaming response"]
+    S --> P["Frontend stream parsing<br/>extracts &lt;edit&gt; blocks"]
+    P --> E["handleApplyEdits(edits)"]
+    E --> BK["Backup original content<br/>to editSnapshots<br/>record to lastEditedFiles"]
+    BK --> W["fs.client.writeFile()<br/>write AI-generated content"]
+    W --> T["Update open tabs<br/>or auto-open file"]
+    T --> R["Refresh file tree"]
+    R --> DONE["Done"]
+```
+
+**Note**: Every agent edit operation automatically backs up the original file content before writing, enabling the user to roll back all changes with a single `undoLastEdits()` call.
+
+### 3. Sequence Diagram — Agent Edit & Undo
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant AgentPanel
+    participant MainLayout
+    participant useFileSystem as useFileSystem<br/>(reactive)
+    participant Server
+    participant EditorStore
+
+    User->>AgentPanel: Send message
+    AgentPanel->>Server: POST /api/agent/stream
+    Server-->>AgentPanel: SSE streaming chunks
+    AgentPanel->>AgentPanel: Parse <edit> blocks → ParsedEdit[]
+    AgentPanel->>MainLayout: @apply-edits(edits)
+
+    loop Each edit
+        MainLayout->>MainLayout: Resolve resolvedPath
+        MainLayout->>useFileSystem: fs.client.readFile(resolvedPath)
+        useFileSystem-->>MainLayout: original content
+        MainLayout->>MainLayout: editSnapshots.set(path, original)
+        MainLayout->>useFileSystem: fs.client.writeFile(resolvedPath, edit.content)
+        useFileSystem-->>MainLayout: ok
+        MainLayout->>EditorStore: updateContent / openFile
+        MainLayout->>useFileSystem: fs.loadDirectory('.')
+    end
+
+    User->>AgentPanel: Click Undo
+    AgentPanel->>MainLayout: @undo-edits()
+
+    loop lastEditedFiles
+        MainLayout->>MainLayout: editSnapshots.get(filePath)
+        MainLayout->>useFileSystem: fs.client.writeFile(filePath, original)
+        useFileSystem-->>MainLayout: ok
+        MainLayout->>EditorStore: updateContent + saveTab
+    end
+```
+
+**Note**: `handleApplyEdits` snapshots the original content before each write; `undoLastEdits` iterates `lastEditedFiles` to restore each file. `fs` is created via `reactive(useFileSystem())` — Vue 3's `reactive()` auto-unwraps nested `ref`s, so access uses `fs.client` directly, not `fs.client.value`.
+
+### 4. Class Diagram — Core Type Hierarchy
+
+```mermaid
+classDiagram
+    class IFileSystem {
+        <<interface>>
+        +type: 'local'|'server'|'virtual'
+        +cwd: string
+        +readFile(path) Promise~string~
+        +writeFile(path, content) Promise~void~
+        +deleteFile(path) Promise~void~
+        +readDir(path) Promise~FileEntry[]
+        +createDir(path) Promise~void~
+        +exists(path) Promise~boolean~
+        +stat(path) Promise~FileEntry~
+        +rename(oldPath, newPath) Promise~void~
+        +dispose() void
+    }
+
+    class LocalFileSystem {
+        +type: 'local'
+        +实现: Node.js fs/promises
+    }
+
+    class ServerFileSystem {
+        +type: 'server'
+        +实现: REST fetch /api/files/*
+    }
+
+    class VirtualFileSystem {
+        +type: 'virtual'
+        +实现: 内存 Map
+    }
+
+    class FileServiceClient {
+        <<interface>>
+        +readFile/writeFile/deleteFile()
+        +readDir/createDir/deleteDir()
+        +exists/stat/rename()
+        +openFolder/openFile/saveFileAs()
+    }
+
+    class IAgentProvider {
+        <<interface>>
+        +name: string
+        +initialize(config) Promise~void~
+        +sendMessage(msg, ctx) Promise~AgentMessage~
+        +streamMessage(msg, ctx, onChunk) Promise~AgentMessage~
+    }
+
+    IFileSystem <|.. LocalFileSystem
+    IFileSystem <|.. ServerFileSystem
+    IFileSystem <|.. VirtualFileSystem
+    FileServiceClient <|.. ElectronClient
+    FileServiceClient <|.. ServerClient
+    FileServiceClient <|.. BrowserClient
+
+    class EditorTab {
+        +id: string
+        +name: string
+        +path: string
+        +content: string
+        +language: string
+        +isDirty: boolean
+        +isUntitled: boolean
+    }
+
+    class EditorStore {
+        +tabs: EditorTab[]
+        +activeTabId: string
+        +fileTreeNodes: FileEntry[]
+        +workspaceRoot: string
+        +workspaceMode: string
+        +openFile(path, content)
+        +closeTab(id)
+        +updateContent(id, content)
+        +saveTab(id)
+    }
+
+    class AgentContext {
+        +openFiles: path[] | content[]
+        +fileTree: string[]
+        +cursorPosition
+        +selection
+        +conversationHistory: AgentMessage[]
+    }
+
+    class AgentMessage {
+        +id: string
+        +role: 'user'|'assistant'|'system'
+        +content: string
+        +timestamp: number
+        +editOperations: AgentEditResult[]
+    }
+```
+
+**Note**: `IFileSystem` is the low-level file system abstraction, with 3 implementations covering local / remote / in-memory scenarios. `FileServiceClient` is the frontend's unified service interface; `fileService.ts` selects Electron IPC / REST / File System Access API clients based on the runtime environment. `EditorStore` (Pinia) is the single source of truth for the frontend, managing tabs, the file tree, and workspace metadata.
 
 ## Quick Start
 
