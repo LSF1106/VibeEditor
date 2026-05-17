@@ -48,9 +48,13 @@
         <div v-if="msg.editOperations && msg.editOperations.length > 0" class="edit-summary">
           {{ msg.editOperations.length }} 个文件已修改：
           <span v-for="e in msg.editOperations" :key="e.path" class="edit-file">{{ e.path }}</span>
+          <button class="undo-btn" @click="emit('undo-edits')">Undo</button>
         </div>
       </div>
-      <div v-if="agent.isProcessing.value" class="agent-loading">Thinking...</div>
+      <div v-if="agent.isProcessing.value" class="agent-loading">
+        <template v-if="agent.toolStatus.value">{{ agent.toolStatus.value }}</template>
+        <template v-else>Thinking...</template>
+      </div>
     </div>
 
     <!-- 输入区域 -->
@@ -76,19 +80,22 @@
 import { ref, nextTick, onMounted, onUnmounted } from 'vue';
 import { useAgent } from '../../composables/useAgent';
 import { useProviderSettings } from '../../composables/useProviderSettings';
+import { useEditorStore } from '../../stores/editor';
 import { renderMarkdown } from '../../services/markdown';
 import type { ParsedEdit } from '../../services/editParser';
 import SettingsDialog from './SettingsDialog.vue';
 
 const emit = defineEmits<{
   'apply-edits': [edits: ParsedEdit[]]
+  'undo-edits': []
 }>();
 
 const agent = useAgent();
 const providerSettings = useProviderSettings();
+const editorStore = useEditorStore();
 const input = ref('');
 const messagesContainer = ref<HTMLElement>();
-const modes = ['chat', 'edit', 'agent'] as const;
+const modes = ['build', 'plan'] as const;
 const showSettings = ref(false);
 
 // 自动滚动控制
@@ -144,11 +151,13 @@ async function send() {
 
   userScrolledUp.value = false;
 
-  // 启动流式请求，用户消息和占位消息同步插入 messages 数组
+  const activeFilePath = editorStore.activeTab?.path;
+
   const streamPromise = agent.streamMessage(
     text,
     providerSettings.activeProvider.value,
-    () => scheduleScroll(false)
+    () => scheduleScroll(false),
+    activeFilePath
   );
 
   // 等待 Vue 渲染用户消息后立即滚动
@@ -374,6 +383,20 @@ onUnmounted(() => {
   border-radius: 3px;
   font-family: 'Consolas', 'Courier New', monospace;
   font-size: 10px;
+}
+.undo-btn {
+  margin-left: auto;
+  background: rgba(255, 200, 50, 0.15);
+  border: 1px solid rgba(255, 200, 50, 0.3);
+  color: #d4a017;
+  padding: 2px 8px;
+  font-size: 10px;
+  cursor: pointer;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+.undo-btn:hover {
+  background: rgba(255, 200, 50, 0.25);
 }
 .agent-loading {
   color: var(--accent-color);

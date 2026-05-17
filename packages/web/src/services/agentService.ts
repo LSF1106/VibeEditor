@@ -6,15 +6,20 @@ export interface AgentMessage {
 }
 
 export interface AgentConfig {
-  mode: 'chat' | 'edit' | 'agent';
+  mode: 'build' | 'plan';
   model?: string;
   apiUrl?: string;
   apiKey?: string;
 }
 
+export interface StreamEvent {
+  type: 'tool_start' | 'tool_end' | 'tool_result';
+  message?: string;
+  content?: string;
+}
+
 export function createAgentService(baseUrl = '') {
   return {
-    // 非流式发送消息：POST 后等待完整 JSON 响应
     async sendMessage(message: string, context: Record<string, unknown>, config: AgentConfig): Promise<AgentMessage> {
       const res = await fetch(`${baseUrl}/api/agent/chat`, {
         method: 'POST',
@@ -25,18 +30,21 @@ export function createAgentService(baseUrl = '') {
       return res.json();
     },
 
-    // 流式接收消息：通过 ReadableStream 逐行解析 SSE 事件
-    // 使用 buffer 处理跨 chunk 边界的不完整 SSE 行
     async streamMessage(
       message: string,
       context: Record<string, unknown>,
       config: AgentConfig,
-      onChunk: (chunk: string) => void
+      onChunk: (chunk: string) => void,
+      onEvent?: (event: StreamEvent) => void
     ): Promise<AgentMessage> {
+      const body: Record<string, unknown> = { message, context, config };
+      if (context.workspaceRoot) {
+        body.workspaceRoot = context.workspaceRoot;
+      }
       const res = await fetch(`${baseUrl}/api/agent/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message, context, config }),
+        body: JSON.stringify(body),
       });
 
       if (!res.ok) {
@@ -49,7 +57,7 @@ export function createAgentService(baseUrl = '') {
 
       const decoder = new TextDecoder();
       let fullContent = '';
-      let buffer = ''; // 缓冲区：处理跨 chunk 边界的不完整行
+      let buffer = '';
 
       while (true) {
         const { done, value } = await reader.read();
@@ -57,20 +65,29 @@ export function createAgentService(baseUrl = '') {
 
         buffer += decoder.decode(value, { stream: true });
         const parts = buffer.split('\n');
-        buffer = parts.pop() || ''; // 最后一段可能是未完成的 SSE 行，保留到下次
+        buffer = parts.pop() || '';
 
         for (const line of parts) {
           if (!line.startsWith('data: ')) continue;
           try {
             const data = JSON.parse(line.slice(6));
             if (data.error) throw new Error(data.error);
-            if (data.done) break; // 流结束
+            if (data.done) break;
+
+            if (data.tool_start && onEvent) {
+              onEvent({ type: 'tool_start', message: data.tool_start });
+            } else if (data.tool_end && onEvent) {
+              onEvent({ type: 'tool_end', message: data.tool_end });
+            } else if (data.tool_result && onEvent) {
+              onEvent({ type: 'tool_result', content: data.tool_result });
+            }
+
             if (data.chunk) {
               fullContent += data.chunk;
-              onChunk(data.chunk); // 逐 token 回调，驱动 UI 实时更新
+              onChunk(data.chunk);
             }
           } catch {
-            // 跳过格式异常的 SSE 行
+            // skip malformed SSE lines
           }
         }
       }

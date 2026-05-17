@@ -76,7 +76,7 @@
       <!-- Agent 面板拖拽手柄 -->
       <div v-if="showAgent" class="agent-resize-handle" @mousedown="startAgentResize"></div>
       <div v-if="showAgent" class="agent-sidebar" :style="{ width: agentWidth + 'px' }">
-        <AgentPanel @apply-edits="handleApplyEdits" />
+        <AgentPanel @apply-edits="handleApplyEdits" @undo-edits="undoLastEdits" />
       </div>
     </div>
     <SaveDialog
@@ -121,6 +121,32 @@ let isResizingAgent = false;
 const showSaveDialog = ref(false);
 const saveDialogDefaultName = ref('');
 let saveDialogResolver: ((value: string | null) => void) | null = null;
+
+const editSnapshots = ref<Map<string, string>>(new Map());
+const lastEditedFiles = ref<string[]>([]);
+
+async function undoLastEdits() {
+  if (lastEditedFiles.value.length === 0) return;
+
+  for (const filePath of lastEditedFiles.value) {
+    const original = editSnapshots.value.get(filePath);
+    if (original !== undefined) {
+      try {
+        await fs.client.writeFile(filePath, original);
+        const tab = store.tabs.find(t => t.path === filePath);
+        if (tab) {
+          store.updateContent(tab.id, original);
+          store.saveTab(tab.id);
+        }
+      } catch (e: any) {
+        console.error('Failed to undo edit for', filePath, e);
+      }
+    }
+  }
+
+  editSnapshots.value.clear();
+  lastEditedFiles.value = [];
+}
 
 function handleSaveFileAs(): Promise<string | null> {
   return new Promise((resolve) => {
@@ -250,25 +276,50 @@ function startAgentResize(e: MouseEvent) {
 
 // 处理 Agent 生成的编辑操作：写入文件并更新已打开的编辑器标签页
 async function handleApplyEdits(edits: ParsedEdit[]) {
+  editSnapshots.value.clear();
+  lastEditedFiles.value = [];
+
   for (const edit of edits) {
     try {
-      // LLM 可能返回相对路径，需要基于工作区根目录解析
+      // LLM 基于文件树生成相对路径（如 packages/web/src/App.vue）
+      // 仅当 workspaceRoot 为真实绝对路径时才作为前缀拼接
+      const root = store.workspaceRoot;
+      const isRealPath = root && (root.startsWith('/') || /^[A-Z]:[\\/]/i.test(root));
       const resolvedPath = edit.path.startsWith('/') || edit.path.includes(':')
         ? edit.path
-        : store.workspaceRoot
-          ? store.workspaceRoot.replace(/[\/\\]?$/, '/') + edit.path
+        : isRealPath
+          ? root.replace(/[\/\\]?$/, '/') + edit.path
           : edit.path;
+
+      try {
+        const original = await fs.client.readFile(resolvedPath);
+        editSnapshots.value.set(resolvedPath, original);
+      } catch {
+        // new file, no backup needed
+      }
+      lastEditedFiles.value.push(resolvedPath);
 
       await fs.client.writeFile(resolvedPath, edit.content);
 
-      // 如果该文件已在编辑器中打开，更新标签页内容并标记为已保存
-      const tab = store.tabs.find(t => t.path === resolvedPath);
+      // 更新已打开的标签页：精确匹配 + 后缀模糊匹配
+      let tab = store.tabs.find(t => t.path === resolvedPath);
+      if (!tab) tab = store.tabs.find(t => t.path.endsWith('/' + edit.path) || t.path.endsWith('\\' + edit.path));
+      if (!tab && resolvedPath === edit.path) tab = store.tabs.find(t => t.path.endsWith(edit.path));
       if (tab) {
         store.updateContent(tab.id, edit.content);
         store.saveTab(tab.id);
+      } else {
+        // 文件未打开，自动打开并标记为已保存
+        store.openFile(resolvedPath, edit.content);
+        store.saveTab(store.activeTabId!);
+      }
+
+      // 刷新文件树以反映变化
+      if (store.fileTreeNodes.length > 0) {
+        fs.loadDirectory('.').catch(() => {});
       }
     } catch (e: any) {
-      console.error('Failed to apply edit to', edit.path, e);
+      fs.error = `Edit failed: ${edit.path} - ${e.message}`;
     }
   }
 }

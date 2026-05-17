@@ -16,42 +16,55 @@ function getLLMConfig(config: AgentConfig): LLMConfig {
   };
 }
 
-// 根据 Agent 模式构建不同的系统提示词
-// chat: 纯对话模式，不涉及文件编辑
-// edit: 输出带 <edit> 标签的完整文件内容，前端可解析并应用
-// agent: 自主跨文件编辑模式，可链式输出多个 <edit> 块
+// plan: 只读对话模式，不涉及文件编辑
+// build: 编辑模式，可读写文件、执行工具、输出 <edit> 块
 function buildSystemPrompt(config: AgentConfig, context: AgentContext): string {
   const base = `You are an AI code editor assistant. You help the user write, edit, and understand code.
 
 Current mode: ${config.mode}`;
 
   const modeInstructions: Record<string, string> = {
-    chat: `You are in chat mode. Answer questions, explain code, and discuss ideas. Do NOT try to edit files directly.`,
-    edit: [
-      'You are in edit mode. When the user asks you to modify code, respond with the complete updated file content wrapped in edit blocks:',
+    plan: `You are in plan mode. Answer questions, explain code, and discuss ideas. Do NOT try to edit files directly.`,
+
+    build: [
+      'You are an autonomous coding agent. Your goal is to understand, plan, and execute code changes across multiple files.',
+      '',
+      '## Available Tools',
+      'You can use these tools by outputting XML blocks in your response:',
+      '',
+      '<read_file path="relative/path/to/file.ext"/>',
+      'Reads the full content of a file not currently in context. Use this to explore the codebase.',
+      '',
+      '<list_dir path="relative/dir"/>',
+      'Lists the contents of a directory. Use this to understand project structure.',
+      '',
+      '<search_code pattern="regex" [path="relative/dir" maxResults="20"]/>',
+      'Searches for a pattern in the codebase. Path is optional (defaults to root).',
       '',
       '<edit path="relative/path/to/file.ext">',
       '```language',
-      '// complete new file content here',
+      '// complete new file content',
       '```',
       '</edit>',
+      'Replaces the entire content of a file. Use this to make changes.',
       '',
-      'You can include multiple <edit> blocks for multiple files. Explain your changes before or after the edit blocks.',
-    ].join('\n'),
-    agent: [
-      'You are in agent mode. You can autonomously make changes across multiple files. For each file you want to modify, output an edit block:',
+      '## Workflow',
+      '1. **Think** — Analyze the user request and plan your approach',
+      '2. **Explore** — Read relevant files and search the codebase to understand the current state',
+      '3. **Plan** — Decide what changes are needed across which files',
+      '4. **Execute** — Output <edit> blocks with complete updated file content',
+      '5. **Explain** — Summarize what you changed and why',
       '',
-      '<edit path="relative/path/to/file.ext">',
-      '```language',
-      '// complete new file content here',
-      '```',
-      '</edit>',
-      '',
-      'Explain your reasoning and plan before making edits. You can chain multiple edits.',
+      '## Rules',
+      '- Always read existing files before editing them',
+      '- Make minimal, focused changes. Do not rewrite entire files unnecessarily',
+      '- In edit blocks, provide COMPLETE file content, not diffs or partial content',
+      '- When reading files, request them one at a time for clarity',
+      '- You may use multiple tools in a single response (read + search + edit)',
     ].join('\n'),
   };
 
-  return base + '\n\n' + (modeInstructions[config.mode] || modeInstructions.chat);
+  return base + '\n\n' + (modeInstructions[config.mode] || modeInstructions.plan);
 }
 
 // 构建发送给 LLM 的完整消息列表
@@ -103,29 +116,32 @@ function buildMessages(config: AgentConfig, message: string, context: AgentConte
 export class OpenAILikeProvider implements IAgentProvider {
   readonly name = 'openai-compatible';
   readonly displayName = 'OpenAI Compatible';
-  private config: LLMConfig | null = null;
+  private llmConfig: LLMConfig | null = null;
+  private agentConfig: AgentConfig | null = null;
 
   async initialize(config: AgentConfig): Promise<void> {
-    this.config = getLLMConfig(config);
+    this.llmConfig = getLLMConfig(config);
+    this.agentConfig = config;
   }
 
   // 非流式发送消息：一次性返回完整回复
   async sendMessage(message: string, context: AgentContext): Promise<AgentMessage> {
-    if (!this.config) throw new Error('Provider not initialized');
+    if (!this.llmConfig) throw new Error('Provider not initialized');
 
-    const messages = buildMessages({ mode: 'chat' }, message, context);
+    const cfg = this.agentConfig || { mode: 'plan' as const };
+    const messages = buildMessages(cfg, message, context);
 
-    const response = await fetch(`${this.config.apiUrl}/chat/completions`, {
+    const response = await fetch(`${this.llmConfig.apiUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.config.apiKey}`,
+        'Authorization': `Bearer ${this.llmConfig.apiKey}`,
       },
       body: JSON.stringify({
-        model: this.config.model,
+        model: this.llmConfig.model,
         messages,
-        temperature: 0.3,
-        max_tokens: 4096,
+        temperature: cfg.temperature ?? 0.3,
+        max_tokens: cfg.maxTokens ?? 4096,
       }),
     });
 
@@ -152,21 +168,22 @@ export class OpenAILikeProvider implements IAgentProvider {
     context: AgentContext,
     onChunk: (chunk: string) => void
   ): Promise<AgentMessage> {
-    if (!this.config) throw new Error('Provider not initialized');
+    if (!this.llmConfig) throw new Error('Provider not initialized');
 
-    const messages = buildMessages({ mode: 'chat' }, message, context);
+    const cfg = this.agentConfig || { mode: 'plan' as const };
+    const messages = buildMessages(cfg, message, context);
 
-    const response = await fetch(`${this.config.apiUrl}/chat/completions`, {
+    const response = await fetch(`${this.llmConfig.apiUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.config.apiKey}`,
+        'Authorization': `Bearer ${this.llmConfig.apiKey}`,
       },
       body: JSON.stringify({
-        model: this.config.model,
+        model: this.llmConfig.model,
         messages,
-        temperature: 0.3,
-        max_tokens: 4096,
+        temperature: cfg.temperature ?? 0.3,
+        max_tokens: cfg.maxTokens ?? 4096,
         stream: true, // 启用流式模式
       }),
     });
@@ -221,6 +238,7 @@ export class OpenAILikeProvider implements IAgentProvider {
   }
 
   dispose(): void {
-    this.config = null;
+    this.llmConfig = null;
+    this.agentConfig = null;
   }
 }

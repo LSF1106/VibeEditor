@@ -1,6 +1,6 @@
 import { EditOperation } from '../editor/types';
 
-export type AgentMode = 'chat' | 'edit' | 'agent';
+export type AgentMode = 'build' | 'plan';
 
 export interface AgentMessage {
   id: string;
