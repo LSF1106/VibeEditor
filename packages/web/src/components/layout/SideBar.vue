@@ -78,6 +78,10 @@ function toggle(id: string) {
   text-align: center;
 }
 .sb-section {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
   border-bottom: 1px solid var(--border-color);
 }
 .sb-section-header {
@@ -110,6 +114,8 @@ function toggle(id: string) {
   font-weight: 400;
 }
 .sb-section-body {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
 }
 .sb-section-empty {

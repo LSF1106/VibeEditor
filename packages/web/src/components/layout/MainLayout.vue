@@ -27,25 +27,39 @@
         @select="onActivitySelect"
       />
       <div v-if="!sidebarCollapsed" class="sidebar" :style="{ width: sidebarWidth + 'px' }">
-        <SideBar
-          :title="activeActivityTitle"
-          :sections="sidebarSections"
-        >
-          <template v-slot:explorer>
-            <FileTree
-              :nodes="store.fileTreeNodes"
-              :workspace-root="store.workspaceRoot"
-              :workspace-mode="store.workspaceMode"
-              :loading="fs.isLoading"
-              :expanded-dirs="expandedDirs"
-              :loading-dirs="loadingDirs"
-              :dir-children="dirChildren"
-              @select-file="fs.openAndReadFile"
-              @expand-dir="handleExpandDir"
-              @delete-file="fs.deleteFile"
-            />
-          </template>
-        </SideBar>
+        <template v-if="activeActivity === 'explorer'">
+          <SideBar
+            :title="activeActivityTitle"
+            :sections="sidebarSections"
+          >
+            <template v-slot:explorer>
+              <FileTree
+                :nodes="store.fileTreeNodes"
+                :workspace-root="store.workspaceRoot"
+                :workspace-mode="store.workspaceMode"
+                :loading="fs.isLoading"
+                :expanded-dirs="expandedDirs"
+                :loading-dirs="loadingDirs"
+                :dir-children="dirChildren"
+                @select-file="fs.openAndReadFile"
+                @expand-dir="handleExpandDir"
+                @delete-file="fs.deleteFile"
+              />
+            </template>
+          </SideBar>
+        </template>
+        <template v-else-if="activeActivity === 'search'">
+          <SearchPanel
+            :client="fs.client"
+            @open-file="fs.openAndReadFile"
+          />
+        </template>
+        <template v-else>
+          <SideBar
+            :title="activeActivityTitle"
+            :sections="sidebarSections"
+          />
+        </template>
       </div>
       <div v-if="!sidebarCollapsed" class="resize-handle" @mousedown="startSidebarResize"></div>
       <div class="editor-area">
@@ -132,6 +146,7 @@ import type { ActivityItem } from './ActivityBar';
 import SideBar from './SideBar.vue';
 import type { SideBarSection } from './SideBar';
 import FileTree from '../file-tree/FileTree.vue';
+import SearchPanel from '../SearchPanel.vue';
 import MonacoEditor from '../editor/MonacoEditor.vue';
 import AgentPanel from '../agent/AgentPanel.vue';
 import SaveDialog from '../SaveDialog.vue';
@@ -177,6 +192,10 @@ function onActivitySelect(id: string) {
   if (id === 'explorer') {
     sidebarSections.value = [
       { id: 'explorer', label: 'EXPLORER', count: store.fileTreeNodes.length },
+    ];
+  } else if (id === 'search') {
+    sidebarSections.value = [
+      { id: 'search', label: 'SEARCH', count: undefined },
     ];
   } else {
     sidebarSections.value = [
