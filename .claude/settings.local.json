@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run *)",
+      "mcp__ide__getDiagnostics",
+      "Bash(npx electron-builder *)",
+      "Bash(../node_modules/.bin/electron-builder --win --x64)",
+      "Bash(\"D:\\\\2_demos\\\\nodejs_demos\\\\VibeEditor\\\\node_modules\\\\.bin\\\\electron-builder.cmd\" --win --x64)",
+      "Bash(npm install *)",
+      "Bash(\"D:\\\\2_demos\\\\nodejs_demos\\\\VibeEditor\\\\node_modules\\\\7zip-bin\\\\win\\\\x64\\\\7za.exe\" x *)",
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(cd /d \"C:\\\\Users\\\\zhang\\\\AppData\\\\Local\\\\electron-builder\\\\Cache\\\\winCodeSign\")",
+      "Bash(ls -la)",
+      "Bash(mkdir -p \"C:\\\\Users\\\\zhang\\\\AppData\\\\Local\\\\electron-builder\\\\Cache\\\\winCodeSign\")",
+      "Bash(curl -L -o \"C:\\\\Users\\\\zhang\\\\AppData\\\\Local\\\\electron-builder\\\\Cache\\\\winCodeSign\\\\winCodeSign-2.6.0.7z\" \"https://github.com/electron-userland/electron-builder-binaries/releases/download/winCodeSign-2.6.0/winCodeSign-2.6.0.7z\")",
+      "Bash(echo \"EXIT=$?\")"
+    ]
+  }
+}

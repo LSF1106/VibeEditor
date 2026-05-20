@@ -87,8 +87,13 @@ import { useAgent } from '../../composables/useAgent';
 import { useProviderSettings } from '../../composables/useProviderSettings';
 import { useEditorStore } from '../../stores/editor';
 import { renderMarkdown } from '../../services/markdown';
+import type { FileServiceClient } from '../../services/fileService';
 import type { ParsedEdit } from '../../services/editParser';
 import SettingsDialog from './SettingsDialog.vue';
+
+const props = defineProps<{
+  fileClient?: FileServiceClient | null;
+}>();
 
 const emit = defineEmits<{
   'apply-edits': [edits: ParsedEdit[]]
@@ -164,7 +169,8 @@ async function send() {
     text,
     providerSettings.activeProvider.value,
     () => scheduleScroll(false),
-    activeFilePath
+    activeFilePath,
+    props.fileClient
   );
 
   // 等待 Vue 渲染用户消息后立即滚动

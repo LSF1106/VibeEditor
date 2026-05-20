@@ -10,23 +10,35 @@
     "pack": "electron-builder --dir",
     "dist": "electron-builder"
   },
-  "dependencies": {
-    "@vibeeditor/core": "0.1.0",
-    "electron": "^28.3.3"
-  },
+  "author": "VibeEditor",
+  "dependencies": {},
   "devDependencies": {
+    "electron": "28.3.3",
     "electron-builder": "^24.9.1",
     "typescript": "^5.3.3"
   },
   "build": {
     "appId": "com.vibeeditor.app",
     "productName": "VibeEditor",
+    "electronVersion": "28.3.3",
     "directories": {
       "output": "out"
     },
     "files": [
       "dist/**/*",
       "../web/dist/**/*"
-    ]
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
   }
 }
