@@ -1,8 +1,11 @@
 import { ref } from 'vue';
 import { createAgentService } from '../services/agentService';
 import type { AgentConfig, StreamEvent } from '../services/agentService';
+import type { AgentContext } from '@vibeeditor/core';
 import type { ProviderConfig } from './useProviderSettings';
+import type { FileServiceClient } from '../services/fileService';
 import { parseEditsFromText, type ParsedEdit } from '../services/editParser';
+import { runLocalAgentLoop } from '../services/localAgentLoop';
 import { useEditorStore } from '../stores/editor';
 import { getEditorInstance } from '../services/editorInstance';
 
@@ -12,13 +15,6 @@ export interface ChatMessage {
   content: string;
   timestamp: number;
   editOperations?: ParsedEdit[];
-}
-
-export interface AgentContext {
-  openFiles: { path: string; content: string }[];
-  fileTree: string[];
-  cursorPosition?: { file: string; line: number; column: number };
-  selection?: { file: string; text: string; startLine: number; endLine: number };
 }
 
 function collectFileTreePaths(entries: any[], basePath: string): string[] {
@@ -64,7 +60,7 @@ function buildAgentContext(activeFilePath?: string): AgentContext {
     }
   }
 
-  return { openFiles, fileTree, cursorPosition, selection };
+  return { openFiles, fileTree, cursorPosition, selection, conversationHistory: [] as AgentContext['conversationHistory'] };
 }
 
 export function useAgent() {
@@ -128,7 +124,13 @@ export function useAgent() {
     }
   }
 
-  async function streamMessage(content: string, provider?: ProviderConfig | null, onChunk?: () => void, activeFilePath?: string) {
+  async function streamMessage(
+    content: string,
+    provider?: ProviderConfig | null,
+    onChunk?: () => void,
+    activeFilePath?: string,
+    localClient?: FileServiceClient | null
+  ) {
     const userMsg: ChatMessage = {
       id: `msg_${Date.now()}`,
       role: 'user',
@@ -151,29 +153,53 @@ export function useAgent() {
     isProcessing.value = true;
 
     try {
+      const store = useEditorStore();
       const ctx = buildAgentContext(activeFilePath);
-      const streamCtx = {
-        ...ctx,
-        conversationHistory: messages.value.slice(0, -1).filter(m => m.id !== assistantMsgId),
-        workspaceRoot: useEditorStore().workspaceRoot || undefined,
-      };
-      await service.streamMessage(
-        content,
-        streamCtx,
-        buildRequestConfig(provider),
-        (chunk: string) => {
-          const msg = messages.value.find(m => m.id === assistantMsgId);
-          if (msg) msg.content += chunk;
-          if (onChunk) onChunk();
-        },
-        (event: StreamEvent) => {
-          if (event.type === 'tool_start') {
-            toolStatus.value = event.message || '';
-          } else if (event.type === 'tool_end') {
-            toolStatus.value = '';
+      const history = messages.value.slice(0, -1).filter(m => m.id !== assistantMsgId);
+
+      if (store.workspaceMode === 'local' && localClient) {
+        const fullContent = await runLocalAgentLoop(
+          localClient,
+          buildRequestConfig(provider),
+          content,
+          { ...ctx, conversationHistory: history as AgentContext['conversationHistory'] },
+          {
+            onChunk: (chunk: string) => {
+              const msg = messages.value.find(m => m.id === assistantMsgId);
+              if (msg) msg.content += chunk;
+              if (onChunk) onChunk();
+            },
+            onToolStart: (message: string) => { toolStatus.value = message; },
+            onToolEnd: () => { toolStatus.value = ''; },
           }
-        }
-      );
+        );
+
+        const msg = messages.value.find(m => m.id === assistantMsgId);
+        if (msg) msg.content = fullContent;
+      } else {
+        const streamCtx = {
+          ...ctx,
+          conversationHistory: history,
+          workspaceRoot: store.workspaceRoot || undefined,
+        };
+        await service.streamMessage(
+          content,
+          streamCtx,
+          buildRequestConfig(provider),
+          (chunk: string) => {
+            const msg = messages.value.find(m => m.id === assistantMsgId);
+            if (msg) msg.content += chunk;
+            if (onChunk) onChunk();
+          },
+          (event: StreamEvent) => {
+            if (event.type === 'tool_start') {
+              toolStatus.value = event.message || '';
+            } else if (event.type === 'tool_end') {
+              toolStatus.value = '';
+            }
+          }
+        );
+      }
 
       const msg = messages.value.find(m => m.id === assistantMsgId);
       if (msg) {
