@@ -175,6 +175,7 @@ const sidebarSavedWidth = ref(260);
 const agentWidth = ref(350);
 const activeActivity = ref('explorer');
 const isDraggingFolder = ref(false);
+// Drag events fire as the cursor moves across child elements, so count depth.
 let dragDepth = 0;
 
 const activityItems: ActivityItem[] = [
@@ -430,6 +431,7 @@ async function handleDrop(e: DragEvent) {
   const opened = await fs.openDroppedFolder(dataTransfer);
   if (!opened) return;
 
+  // A successful drop replaces the workspace, so reset tree expansion state.
   clearDirState();
   activeActivity.value = 'explorer';
   activeActivityTitle.value = 'EXPLORER';

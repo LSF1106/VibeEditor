@@ -10,6 +10,7 @@ export function registerFileHandlers(ipcMain: IpcMain, dialog: Dialog) {
     return path.resolve(currentRoot, target);
   }
 
+  // Reuse this path-based opener for both the native dialog and drag/drop.
   async function openFolderAtPath(folderPath: string): Promise<string> {
     const nextRoot = path.resolve(folderPath);
     const stat = await fs.stat(nextRoot);
@@ -108,6 +109,7 @@ export function registerFileHandlers(ipcMain: IpcMain, dialog: Dialog) {
     return openFolderAtPath(result.filePaths[0]);
   });
 
+  // Dragged folders arrive from the renderer as real filesystem paths.
   ipcMain.handle('file:openFolderPath', async (_e, folderPath: string) => {
     return openFolderAtPath(folderPath);
   });

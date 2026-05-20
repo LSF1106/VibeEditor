@@ -17,12 +17,14 @@ type DroppedDirectoryItem = DataTransferItem & {
   webkitGetAsEntry?: () => { isDirectory: boolean } | null;
 };
 
+// Electron adds the real filesystem path to dropped File objects.
 function getDroppedFilePaths(dataTransfer: DataTransfer): string[] {
   return Array.from(dataTransfer.files)
     .map(file => (file as DroppedFile).path)
     .filter((path): path is string => Boolean(path));
 }
 
+// Browser drops can expose a directory handle instead of a native path.
 async function getDroppedDirectoryHandle(dataTransfer: DataTransfer): Promise<FileSystemDirectoryHandle | null> {
   for (const item of Array.from(dataTransfer.items)) {
     if (item.kind !== 'file') continue;
@@ -257,6 +259,7 @@ export function useFileSystem() {
     try {
       const client = getClient();
 
+      // In Electron, validate and open the dropped native path in the main process.
       if (env === 'electron' && client.openFolderPath) {
         const droppedPaths = getDroppedFilePaths(dataTransfer);
         let lastError: string | null = null;
@@ -281,6 +284,7 @@ export function useFileSystem() {
         }
       }
 
+      // In supporting browsers, reuse the existing local File System Access client.
       const dirHandle = await getDroppedDirectoryHandle(dataTransfer);
       if (dirHandle) {
         const droppedClient = createBrowserLocalClient(dirHandle);
@@ -292,6 +296,7 @@ export function useFileSystem() {
         return true;
       }
 
+      // Some browsers can identify a directory drop but cannot hand out a usable handle.
       const hasDirectoryHint = Array.from(dataTransfer.items).some((item) => {
         const entry = (item as DroppedDirectoryItem).webkitGetAsEntry?.();
         return entry?.isDirectory;
