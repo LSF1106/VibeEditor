@@ -1,5 +1,12 @@
 <template>
-  <div class="main-layout">
+  <div
+    class="main-layout"
+    :class="{ 'drag-over': isDraggingFolder }"
+    @dragenter="handleDragEnter"
+    @dragover="handleDragOver"
+    @dragleave="handleDragLeave"
+    @drop="handleDrop"
+  >
     <Toolbar
       :env="fs.env"
       :workspace-mode="store.workspaceMode"
@@ -126,6 +133,12 @@
       @confirm="onSaveDialogConfirm"
       @cancel="onSaveDialogCancel"
     />
+    <div v-if="isDraggingFolder" class="drop-overlay">
+      <div class="drop-message">
+        <span class="drop-title">Drop folder to open</span>
+        <span class="drop-subtitle">Release anywhere in VibeEditor</span>
+      </div>
+    </div>
     <div v-if="fs.showUndoNotification" class="undo-notification">
       <span class="undo-text">Deleted {{ fs.lastDeleted?.path }}</span>
       <button class="undo-btn" @click="fs.undoDelete()">Undo</button>
@@ -161,6 +174,8 @@ const sidebarCollapsed = ref(false);
 const sidebarSavedWidth = ref(260);
 const agentWidth = ref(350);
 const activeActivity = ref('explorer');
+const isDraggingFolder = ref(false);
+let dragDepth = 0;
 
 const activityItems: ActivityItem[] = [
   { id: 'explorer', label: 'Explorer (Ctrl+Shift+E)', icon: '🗋' },
@@ -375,6 +390,55 @@ async function handleConnectServer() {
   await fs.connectToServer();
 }
 
+function isFileDrag(dataTransfer: DataTransfer | null): boolean {
+  return Boolean(dataTransfer && Array.from(dataTransfer.types).includes('Files'));
+}
+
+function resetDragState() {
+  dragDepth = 0;
+  isDraggingFolder.value = false;
+}
+
+function handleDragEnter(e: DragEvent) {
+  if (!isFileDrag(e.dataTransfer)) return;
+  e.preventDefault();
+  dragDepth += 1;
+  isDraggingFolder.value = true;
+  if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+}
+
+function handleDragOver(e: DragEvent) {
+  if (!isFileDrag(e.dataTransfer)) return;
+  e.preventDefault();
+  isDraggingFolder.value = true;
+  if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+}
+
+function handleDragLeave(e: DragEvent) {
+  if (!isDraggingFolder.value) return;
+  e.preventDefault();
+  dragDepth = Math.max(0, dragDepth - 1);
+  if (dragDepth === 0) isDraggingFolder.value = false;
+}
+
+async function handleDrop(e: DragEvent) {
+  if (!isFileDrag(e.dataTransfer)) return;
+  e.preventDefault();
+  const dataTransfer = e.dataTransfer;
+  resetDragState();
+
+  const opened = await fs.openDroppedFolder(dataTransfer);
+  if (!opened) return;
+
+  clearDirState();
+  activeActivity.value = 'explorer';
+  activeActivityTitle.value = 'EXPLORER';
+  sidebarSections.value = [
+    { id: 'explorer', label: 'EXPLORER', count: store.fileTreeNodes.length },
+  ];
+  if (sidebarCollapsed.value) toggleSidebar();
+}
+
 async function handleExpandDir(dirPath: string) {
   const s = new Set(expandedDirs.value);
   if (s.has(dirPath)) {
@@ -493,6 +557,9 @@ async function handleApplyEdits(edits: ParsedEdit[]) {
   height: 100vh;
   background: var(--bg-primary);
 }
+.main-layout.drag-over {
+  position: relative;
+}
 .main-content {
   display: flex;
   flex: 1;
@@ -596,6 +663,37 @@ async function handleApplyEdits(edits: ParsedEdit[]) {
 .placeholder-btn:hover {
   background: var(--bg-hover);
   border-color: var(--accent-color);
+}
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  background: rgba(0, 0, 0, 0.28);
+}
+.drop-message {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-width: 280px;
+  padding: 22px 30px;
+  border: 1px dashed var(--accent-color);
+  border-radius: 8px;
+  background: rgba(30, 30, 30, 0.94);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.38);
+}
+.drop-title {
+  color: var(--text-primary);
+  font-size: 18px;
+  font-weight: 600;
+}
+.drop-subtitle {
+  color: var(--text-secondary);
+  font-size: 13px;
 }
 .agent-resize-handle {
   width: 4px;

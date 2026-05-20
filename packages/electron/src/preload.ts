@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   exists: (filePath: string) => ipcRenderer.invoke('file:exists', filePath),
   stat: (filePath: string) => ipcRenderer.invoke('file:stat', filePath),
   rename: (oldPath: string, newPath: string) => ipcRenderer.invoke('file:rename', oldPath, newPath),
+  openFolderPath: (folderPath: string) => ipcRenderer.invoke('file:openFolderPath', folderPath),
   openFolder: () => ipcRenderer.invoke('dialog:openFolder'),
   openFile: () => ipcRenderer.invoke('dialog:openFile'),
   saveFile: (filePath: string, content: string) => ipcRenderer.invoke('dialog:saveFile', filePath, content),

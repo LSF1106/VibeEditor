@@ -10,6 +10,16 @@ export function registerFileHandlers(ipcMain: IpcMain, dialog: Dialog) {
     return path.resolve(currentRoot, target);
   }
 
+  async function openFolderAtPath(folderPath: string): Promise<string> {
+    const nextRoot = path.resolve(folderPath);
+    const stat = await fs.stat(nextRoot);
+    if (!stat.isDirectory()) {
+      throw new Error('Dropped item is not a folder');
+    }
+    currentRoot = nextRoot;
+    return currentRoot;
+  }
+
   function toEntry(entryPath: string, name: string, isDir: boolean, stat?: { size: number; mtimeMs: number }): any {
     const relPath = path.relative(currentRoot, entryPath).replace(/\\/g, '/');
     return {
@@ -95,8 +105,11 @@ export function registerFileHandlers(ipcMain: IpcMain, dialog: Dialog) {
       properties: ['openDirectory'],
     });
     if (result.canceled || result.filePaths.length === 0) return null;
-    currentRoot = result.filePaths[0];
-    return currentRoot;
+    return openFolderAtPath(result.filePaths[0]);
+  });
+
+  ipcMain.handle('file:openFolderPath', async (_e, folderPath: string) => {
+    return openFolderAtPath(folderPath);
   });
 
   ipcMain.handle('dialog:openFile', async () => {
