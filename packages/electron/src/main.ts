@@ -1,4 +1,6 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, Menu } from 'electron';
+
+Menu.setApplicationMenu(null);
 import * as path from 'path';
 import { registerFileHandlers } from './ipc/file-handler';
 

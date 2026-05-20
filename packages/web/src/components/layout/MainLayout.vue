@@ -97,7 +97,7 @@
       </div>
       <div v-if="showAgent" class="agent-resize-handle" @mousedown="startAgentResize"></div>
       <div v-if="showAgent" class="agent-sidebar" :style="{ width: agentWidth + 'px' }">
-        <AgentPanel @apply-edits="handleApplyEdits" @undo-edits="undoLastEdits" />
+        <AgentPanel :file-client="fs.client" @apply-edits="handleApplyEdits" @undo-edits="undoLastEdits" />
       </div>
     </div>
     <StatusBar
@@ -128,9 +128,9 @@ import { getEditorInstance } from '../../services/editorInstance';
 import type { ParsedEdit } from '../../services/editParser';
 import Toolbar from '../toolbar/Toolbar.vue';
 import ActivityBar from './ActivityBar.vue';
-import type { ActivityItem } from './ActivityBar';
+import type { ActivityItem } from './ActivityBar.vue';
 import SideBar from './SideBar.vue';
-import type { SideBarSection } from './SideBar';
+import type { SideBarSection } from './SideBar.vue';
 import FileTree from '../file-tree/FileTree.vue';
 import MonacoEditor from '../editor/MonacoEditor.vue';
 import AgentPanel from '../agent/AgentPanel.vue';
