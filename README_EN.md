@@ -309,19 +309,20 @@ classDiagram
 # Install dependencies
 npm install
 
-# Start server + web frontend simultaneously
+# Start server + web frontend simultaneously (auto-builds @vibeeditor/core)
 npm run dev:all
 
-# Or start individually
+# Or start individually (each auto-builds @vibeeditor/core)
 npm run dev:server   # Backend on http://localhost:3456
 npm run dev:web      # Frontend on http://localhost:5173
+npm run dev:electron # Electron desktop (auto-starts Vite frontend + Electron window)
 ```
 
 ## Deployment Modes
 
 | Mode | File System | Command |
 |------|------------|---------|
-| **Electron** desktop | Local FS via IPC (`Node.js fs`) | `npm run dev:electron` |
+| **Electron** desktop | Local FS via IPC (`Node.js fs`) | `npm run dev:electron` (auto-starts Vite + Electron, auto-builds core & electron) |
 | **Server** (remote files) | Server FS via REST API | `npm run dev:server` + `npm run dev:web` |
 | **Browser** (local files) | File System Access API | `npm run dev:web` |
 
@@ -387,6 +388,6 @@ npm run build:all       # Build everything
 - `middleware/auth.ts` — Optional Bearer token auth
 
 ### `@vibeeditor/electron`
-- `main.ts` — Window creation, dev/production mode switching
+- `main.ts` — Window creation, dev/production mode switching (uses `app.isPackaged` to detect: dev mode loads `http://localhost:5173`, production mode loads `web/dist/index.html`)
 - `preload.ts` — Context bridge exposing `window.electronAPI`
 - `ipc/file-handler.ts` — Native file dialogs and FS operations

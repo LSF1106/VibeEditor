@@ -10,10 +10,10 @@
     "packages/web"
   ],
   "scripts": {
-    "dev:server": "npm run dev -w packages/server",
-    "dev:web": "npm run dev -w packages/web",
-    "dev:electron": "npm run dev -w packages/electron",
-    "dev:all": "concurrently \"npm run dev:server\" \"npm run dev:web\"",
+    "dev:server": "npm run build:core && npm run dev -w packages/server",
+    "dev:web": "npm run build:core && npm run dev -w packages/web",
+    "dev:electron": "npm run build:core && npm run build:electron && concurrently \"npm run dev -w packages/web\" \"npm run dev -w packages/electron\"",
+    "dev:all": "npm run build:core && concurrently \"npm run dev -w packages/server\" \"npm run dev -w packages/web\"",
     "build:core": "npm run build -w packages/core",
     "build:web": "npm run build -w packages/web",
     "build:server": "npm run build -w packages/server",

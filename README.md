@@ -309,19 +309,20 @@ classDiagram
 # 安装依赖
 npm install
 
-# 同时启动服务器和前端
+# 同时启动服务器和前端（自动构建 @vibeeditor/core）
 npm run dev:all
 
-# 或分别启动
+# 或分别启动（均会自动构建 @vibeeditor/core）
 npm run dev:server   # 后端运行在 http://localhost:3456
 npm run dev:web      # 前端运行在 http://localhost:5173
+npm run dev:electron # Electron 桌面端（自动启动 Vite 前端 + Electron 窗口）
 ```
 
 ## 部署模式
 
 | 模式 | 文件系统 | 启动命令 |
 |------|---------|---------|
-| **Electron** 桌面端 | 本地 FS, 通过 IPC (`Node.js fs`) | `npm run dev:electron` |
+| **Electron** 桌面端 | 本地 FS, 通过 IPC (`Node.js fs`) | `npm run dev:electron`（自动启动 Vite + Electron，自动构建 core 和 electron） |
 | **Server** 部署 (远程文件) | Server FS, 通过 REST API | `npm run dev:server` + `npm run dev:web` |
 | **Browser** 本地文件 | File System Access API | `npm run dev:web` |
 
@@ -387,6 +388,6 @@ npm run build:all       # 构建所有包 (core → web → server → electron)
 - `middleware/auth.ts` — 可选 Bearer Token 认证
 
 ### `@vibeeditor/electron`
-- `main.ts` — 窗口创建, dev/production 模式切换
+- `main.ts` — 窗口创建, dev/production 模式切换（通过 `app.isPackaged` 检测, 开发模式自动加载 `http://localhost:5173`, 生产模式加载 `web/dist/index.html`）
 - `preload.ts` — Context Bridge 暴露 `window.electronAPI`
 - `ipc/file-handler.ts` — 原生文件对话框和文件系统操作
