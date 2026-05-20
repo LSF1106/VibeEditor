@@ -1,15 +1,12 @@
+import type { AgentConfig } from '@vibeeditor/core';
+
+export type { AgentConfig };
+
 export interface AgentMessage {
   id: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp: number;
-}
-
-export interface AgentConfig {
-  mode: 'build' | 'plan';
-  model?: string;
-  apiUrl?: string;
-  apiKey?: string;
 }
 
 export interface StreamEvent {

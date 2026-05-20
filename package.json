@@ -20,16 +20,15 @@
     "build:electron": "npm run build -w packages/electron",
     "build:all": "npm run build:core && npm run build:web && npm run build:server && npm run build:electron",
     "lint": "eslint packages/*/src --ext .ts,.tsx,.vue",
-    "typecheck": "tsc -b",
-    "postinstall": "npm run build:core"
+    "typecheck": "tsc -b"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
-    "typescript": "^5.3.3",
-    "eslint": "^8.56.0",
     "@typescript-eslint/eslint-plugin": "^6.19.0",
     "@typescript-eslint/parser": "^6.19.0",
+    "concurrently": "^8.2.2",
+    "eslint": "^8.56.0",
     "prettier": "^3.2.4",
-    "concurrently": "^8.2.2"
+    "typescript": "^5.3.3"
   }
 }
