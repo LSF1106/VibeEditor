@@ -26,9 +26,9 @@
 |---|------|------|------|
 | 8 | Agent 对话面板 | ✅ | `AgentPanel.vue`, 支持 chat/edit/agent 三种模式、Markdown + KaTeX 渲染、多 Provider 配置管理 |
 | 9 | Agent 消息流式输出 (SSE) | ✅ | Server SSE + 前端 stream 解析已完整打通; 支持真实 LLM 流式响应 |
-| 10 | Agent 生成编辑操作并应用到文件 | ⚠️ | `<edit>` 区块解析 → 文件写入流程已打通; 但编辑/Agent 模式的 system prompt 在 `provider.ts` 中被硬编码为 `chat` 模式 (Bug); core `executor.ts` 未接入 |
-| 11 | Agent 上下文构建 (打开文件+光标+选区) | ✅ | `core/agent/context.ts` — `buildContextPrompt()` 已实现; 但前端 `useAgent.ts` 未填充 `openFiles`, `fileTree` 等上下文到请求中 |
-| 12 | 编辑操作撤销/重做 | ⚠️ | `core/agent/executor.ts` — `revertEdits()` 已实现; 前端未接入 UI |
+| 10 | Agent 生成编辑操作并应用到文件 | ⚠️ | `<edit>` 区块解析 → 文件写入流程已打通; 但编辑/Agent 模式的 system prompt 在 `@vibeeditor/agent` 的 `provider.ts` 中被硬编码为 `chat` 模式 (Bug); `executor.ts` 未接入 |
+| 11 | Agent 上下文构建 (打开文件+光标+选区) | ✅ | `@vibeeditor/agent` — `buildContextPrompt()` 已实现; 但前端 `useAgent.ts` 未填充 `openFiles`, `fileTree` 等上下文到请求中 |
+| 12 | 编辑操作撤销/重做 | ⚠️ | `@vibeeditor/agent` — `revertEdits()` 已实现; 前端未接入 UI |
 | 13 | LLM 后端对接 (OpenAI / Anthropic / etc.) | ⚠️ | 已通过 raw fetch 对接 OpenAI 兼容 API (支持 Ollama / vLLM 等); 无 SDK 依赖; 编辑/Agent 模式 system prompt 硬编码 bug (#10) 待修复 |
 
 ### P2 — 文件系统 & 项目管理
@@ -99,12 +99,39 @@
 
 ## 架构文档
 
-### 1. 架构图 — 包依赖与部署拓扑
+### 1. 包依赖关系
+
+> 箭头方向：`A --> B` 表示 B 依赖 A（A 是被依赖方）
+
+```mermaid
+graph TD
+    agent["@vibeeditor/agent<br/>AI Agent 框架<br/><br/>· AgentConfig / AgentContext<br/>· IAgentProvider<br/>· OpenAILikeProvider<br/>· AgentLoop<br/>· executeEdits / parseToolCalls"]
+    core["@vibeeditor/core<br/>共享核心<br/><br/>· IFileSystem<br/>· LocalFileSystem / ServerFS / VirtualFS<br/>· EditorTab / EditOperation<br/>· EditorState 管理"]
+    server["@vibeeditor/server<br/>Express 后端<br/><br/>· /api/files/* REST API<br/>· /api/agent/* SSE 流式<br/>· 路径遍历防护"]
+    web["@vibeeditor/web<br/>Vue 3 前端<br/><br/>· Monaco Editor 封装<br/>· AgentPanel 聊天 UI<br/>· useAgent / useFileSystem<br/>· agentService SSE 客户端"]
+    electron["@vibeeditor/electron<br/>Electron 桌面壳<br/><br/>· IPC 桥接 (preload.ts)<br/>· 原生文件对话框<br/>· 主进程 fs 操作"]
+
+    agent --> core
+    agent --> server
+    agent --> web
+    core --> server
+    core --> web
+    core --> electron
+```
+
+**关键变化（相对旧架构）**：
+- **新增** `@vibeeditor/agent` —— Agent 相关代码从 `core` 和 `server` 中抽离，形成独立的智能体模块
+- **`@vibeeditor/core` 瘦身** —— 移除了 `agent/` 目录（types、context、executor），聚焦文件系统和编辑器状态
+- **`@vibeeditor/server` 瘦身** —— 移除了 `agent/` 目录（provider、loop），改为依赖 `@vibeeditor/agent`
+- **零外部依赖** —— `@vibeeditor/agent` 不依赖任何工作区包，通过 `IAgentFileSystem` 接口与平台解耦
+
+### 2. 架构图 — 包依赖与部署拓扑
 
 ```mermaid
 graph TB
     subgraph Packages["npm Workspace 包"]
-        core["@vibeeditor/core<br/>共享类型 / FS抽象 / Agent框架"]
+        agent["@vibeeditor/agent<br/>AI Agent 框架 · LLM Provider · 工具循环"]
+        core["@vibeeditor/core<br/>共享类型 / FS抽象 / 编辑器状态"]
         server["@vibeeditor/server<br/>Express · REST API"]
         web["@vibeeditor/web<br/>Vue 3 · Vite · Monaco"]
         electron["@vibeeditor/electron<br/>Electron 壳 · IPC 桥接"]
@@ -116,6 +143,9 @@ graph TB
         desktop["Electron 桌面<br/>原生 fs 对话框"]
     end
 
+    agent --> core
+    agent --> server
+    agent --> web
     core --> server
     core --> web
     core --> electron
@@ -127,11 +157,11 @@ graph TB
     web -->|File System Access API| browser
 ```
 
-**说明**：`@vibeeditor/core` 是所有包的类型与逻辑基础。前端 `web` 在开发时通过 Vite proxy 将 `/api` 转发到 `server`；Electron 模式下前端由 Electron 窗口加载，文件操作通过 `preload.ts` 暴露的 IPC 桥接到主进程的 Node.js `fs`。
+**说明**：`@vibeeditor/agent` 是独立的 AI Agent 框架模块，提供 LLM Provider、Agent 循环和工具执行等核心能力。`@vibeeditor/core` 聚焦文件系统抽象和编辑器状态管理。前端 `web` 在开发时通过 Vite proxy 将 `/api` 转发到 `server`；Electron 模式下前端由 Electron 窗口加载，文件操作通过 `preload.ts` 暴露的 IPC 桥接到主进程的 Node.js `fs`。
 
-### 2. 流程图
+### 3. 流程图
 
-#### 2.1 运行时环境检测与文件服务选择
+#### 3.1 运行时环境检测与文件服务选择
 
 ```mermaid
 flowchart TD
@@ -148,7 +178,7 @@ flowchart TD
 
 **说明**：`detectEnvironment()` 在 `fileService.ts:22` 中一次性检测并缓存运行时环境，后续所有文件操作通过统一的 `FileServiceClient` 接口执行，上层组件不感知底层差异。
 
-#### 2.2 Agent 编辑操作流程
+#### 3.2 Agent 编辑操作流程
 
 ```mermaid
 flowchart TD
@@ -164,7 +194,7 @@ flowchart TD
 
 **说明**：Agent 的每一次编辑操作在写入磁盘前都会自动备份原文件内容，使得用户可以通过 `undoLastEdits()` 一键回退所有修改。
 
-### 3. 时序图 — Agent 编辑 & 撤销
+### 4. 时序图 — Agent 编辑 & 撤销
 
 ```mermaid
 sequenceDiagram
@@ -205,7 +235,7 @@ sequenceDiagram
 
 **说明**：`handleApplyEdits` 在每次写入前先读取原文做快照；`undoLastEdits` 遍历 `lastEditedFiles` 逐一恢复。`fs` 由 `reactive(useFileSystem())` 创建，Vue 3 的 `reactive()` 自动解包嵌套 `ref`，因此访问时直接使用 `fs.client` 而非 `fs.client.value`。
 
-### 4. 类图 — 核心类型体系
+### 5. 类图 — 核心类型体系
 
 ```mermaid
 classDiagram
@@ -331,11 +361,12 @@ npm run dev:electron # Electron 桌面端（自动启动 Vite 前端 + Electron 
 ## 构建
 
 ```bash
+npm run build:agent     # 构建 AI Agent 框架
 npm run build:core      # 构建共享核心
 npm run build:server    # 构建 Express 后端
 npm run build:web       # 构建 Vue 前端 (输出到 packages/web/dist/)
 npm run build:electron  # 构建 Electron 主进程
-npm run build:all       # 构建所有包 (core → web → server → electron)
+npm run build:all       # 构建所有包 (agent → core → web → server → electron)
 ```
 
 ## 服务端 API
@@ -357,6 +388,14 @@ npm run build:all       # 构建所有包 (core → web → server → electron)
 
 ## 项目结构
 
+### `@vibeeditor/agent`
+- `types.ts` — `AgentConfig`, `AgentContext`, `IAgentProvider`, `IAgentFileSystem`, `EditOperation` 等核心类型
+- `context.ts` — 上下文构建工具（`createEmptyContext`, `buildContextPrompt`, `getConversationSummary`）
+- `executor.ts` — 编辑执行引擎（`executeEdits`, `revertEdits`）
+- `parser.ts` — LLM 回复解析（`parseToolCalls`, `parseEditsFromText`）
+- `provider.ts` — `OpenAILikeProvider` —— OpenAI 兼容 LLM 客户端（原生 fetch，无 SDK 依赖）
+- `loop.ts` — `AgentLoop` —— 多轮自主编码循环（支持 read_file / list_dir / search_code 工具）
+
 ### `@vibeeditor/core`
 - `fs/types.ts` — `IFileSystem` 接口, `FileEntry`, `FileContent`
 - `fs/local.ts` — `LocalFileSystem` (Node.js fs)
@@ -364,9 +403,6 @@ npm run build:all       # 构建所有包 (core → web → server → electron)
 - `fs/virtual.ts` — `VirtualFileSystem` (内存文件系统)
 - `editor/types.ts` — `EditorTab`, `EditOperation`, 语言检测
 - `editor/document.ts` — Tab/文档状态管理
-- `agent/types.ts` — `AgentContext`, `AgentEditResult`, `IAgentProvider`
-- `agent/context.ts` — 为 LLM 提示词构建上下文
-- `agent/executor.ts` — 编辑操作执行器, 支持撤销
 
 ### `@vibeeditor/web`
 - `components/editor/MonacoEditor.vue` — Monaco 编辑器封装
@@ -384,8 +420,6 @@ npm run build:all       # 构建所有包 (core → web → server → electron)
 ### `@vibeeditor/server`
 - `routes/files.ts` — 文件 CRUD API, 含路径遍历防护
 - `routes/agent.ts` — Agent 对话 + 流式端点
-- `agent/provider.ts` — OpenAI 兼容 LLM Provider (raw fetch)
-- `middleware/auth.ts` — 可选 Bearer Token 认证
 
 ### `@vibeeditor/electron`
 - `main.ts` — 窗口创建, dev/production 模式切换（通过 `app.isPackaged` 检测, 开发模式自动加载 `http://localhost:5173`, 生产模式加载 `web/dist/index.html`）

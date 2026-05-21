@@ -1,6 +1,6 @@
 # @vibeeditor/core
 
-VibeEditor 共享核心逻辑库 —— 提供文件系统抽象、编辑器状态管理、AI Agent 框架。
+VibeEditor 共享核心逻辑库 —— 提供文件系统抽象和编辑器状态管理。
 
 ## 目录结构
 
@@ -12,13 +12,9 @@ src/
 │   ├── local.ts          # 本地文件系统实现（Node.js fs）
 │   ├── server.ts         # 服务端文件系统实现（REST API）
 │   └── virtual.ts        # 虚拟文件系统实现（内存 Map）
-├── editor/               # 编辑器状态管理
-│   ├── types.ts          # EditorTab、EditorState 等编辑器类型
-│   └── document.ts       # 标签页与编辑器状态的纯函数操作
-└── agent/                # AI Agent 框架
-    ├── types.ts          # AgentContext、IAgentProvider 等 Agent 类型
-    ├── context.ts        # 上下文构建工具函数
-    └── executor.ts       # 编辑执行引擎（应用与回滚）
+└── editor/               # 编辑器状态管理
+    ├── types.ts          # EditorTab、EditorState 等编辑器类型
+    └── document.ts       # 标签页与编辑器状态的纯函数操作
 ```
 
 ## 模块详解
@@ -92,57 +88,6 @@ src/
 
 - `getLanguageFromPath(filePath)` —— 根据文件扩展名映射到 Monaco Editor 语言标识符（支持 30+ 种语言），未知类型回退到 `'plaintext'`
 
-### 3. Agent 框架（`agent/`）
-
-提供 AI 编码助手的核心抽象：类型定义、上下文构建、编辑执行。
-
-#### 核心接口
-
-`IAgentProvider` 是 AI 后端的插件化契约：
-
-| 成员 | 说明 |
-|------|------|
-| `name` / `displayName` | 提供商标识 |
-| `initialize(config)` | 使用 `AgentConfig` 初始化 |
-| `sendMessage(message, context)` | 发送消息并获取回复 |
-| `streamMessage(message, context, onChunk)` | 流式发送消息（可选实现） |
-| `dispose()` | 资源清理 |
-
-#### AgentConfig 配置
-
-`AgentConfig` 包含：`mode`（`'build' | 'plan'`）、`model`、`apiUrl`、`apiKey`、`systemPrompt`、`temperature`、`maxTokens`。
-
-#### AgentContext 上下文
-
-`AgentContext` 包含当前编码环境的完整快照：
-- `openFiles` —— 已打开的文件列表（路径 + 内容）
-- `fileTree` —— 项目文件树
-- `cursorPosition` —— 用户光标位置
-- `selection` —— 用户文本选区
-- `conversationHistory` —— 对话历史
-
-#### 上下文构建（`context.ts`）
-
-| 函数 | 说明 |
-|------|------|
-| `createEmptyContext()` | 创建空的 Agent 上下文 |
-| `buildContextPrompt(context)` | 将上下文组装为结构化的 Markdown 提示词。包含：文件树概览、已打开文件（代码块格式）、光标位置、选区信息 |
-| `getConversationSummary(messages, maxMessages?)` | 将对话历史拼接为摘要文本 |
-
-#### 编辑执行引擎（`executor.ts`）
-
-负责将 AI 生成的编辑操作应用到文件系统：
-
-- **`executeEdits(fs, edits)`** —— 批量执行编辑操作：
-  1. 读取目标文件（新文件以空字符串起始）
-  2. 逐操作应用到文件内容（insert / delete / replace 均基于行列定位）
-  3. 写回文件系统
-  4. 返回 `ExecutionResult`（`success`, `errors[]`, `applied` 计数）
-
-- **`revertEdits(content, operations)`** —— 回滚编辑操作，通过反转 insert ↔ delete 实现撤销
-
-- **`applyOperation`（私有）** —— 单操作应用：insert 在指定位置插入文本；delete 删除指定范围（单行 / 多行）；replace 替换指定范围为新文本。
-
 ## 架构模式
 
 ### 策略模式 —— 文件系统
@@ -152,10 +97,6 @@ src/
 ### 纯函数式状态 —— 编辑器
 
 `EditorState` 是纯值对象，所有操作返回新状态而非修改原对象。与 Redux/Elm 架构理念一致。
-
-### 插件契约 —— Agent 提供者
-
-`IAgentProvider` 是 AI 后端的标准接口，与具体 API 解耦。支持接入 Anthropic、OpenAI、Ollama 等任意兼容 API。
 
 ### 可区分联合类型
 
@@ -169,17 +110,26 @@ src/
 
 ```
                     src/index.ts（桶导出）
-                   /         |           \
-            src/fs/     src/editor/    src/agent/
-             / | \        /    \        /   |   \
-        types local server types document types context executor
+                   /              \
+            src/fs/            src/editor/
+             / | \               /    \
+        types local server   types document
 ```
 
 - `fs/` 完全独立，不依赖其他模块
 - `editor/` 仅依赖自身的 `types.ts`
-- `agent/types` 依赖 `editor/types`（`EditOperation`）
-- `agent/executor` 依赖 `fs/types`（`IFileSystem`）和 `editor/types`（`EditOperation`）
 - 无循环依赖
+
+## 相关模块
+
+AI Agent 相关功能已抽取为独立模块 **[`@vibeeditor/agent`](../agent/)**，提供：
+
+- **类型定义** —— `AgentConfig`、`AgentContext`、`IAgentProvider`、`IAgentFileSystem`
+- **上下文构建** —— `createEmptyContext()`、`buildContextPrompt()`、`getConversationSummary()`
+- **编辑执行引擎** —— `executeEdits()`、`revertEdits()`
+- **LLM Provider** —— `OpenAILikeProvider`（OpenAI 兼容 API 客户端）
+- **Agent 循环** —— `AgentLoop`（多轮自主编码循环，支持 read_file / list_dir / search_code 工具）
+- **解析器** —— `parseToolCalls()`、`parseEditsFromText()`
 
 ## 技术细节
 

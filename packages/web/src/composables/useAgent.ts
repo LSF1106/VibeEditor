@@ -1,10 +1,10 @@
 import { ref } from 'vue';
 import { createAgentService } from '../services/agentService';
 import type { AgentConfig, StreamEvent } from '../services/agentService';
-import type { AgentContext } from '@vibeeditor/core';
+import type { AgentContext } from '@vibeeditor/agent';
 import type { ProviderConfig } from './useProviderSettings';
 import type { FileServiceClient } from '../services/fileService';
-import { parseEditsFromText, type ParsedEdit } from '../services/editParser';
+import { parseEditsFromText, type ParsedEdit } from '@vibeeditor/agent';
 import { runLocalAgentLoop } from '../services/localAgentLoop';
 import { useEditorStore } from '../stores/editor';
 import { getEditorInstance } from '../services/editorInstance';
@@ -18,7 +18,6 @@ export interface ChatMessage {
   editOperations?: ParsedEdit[];
 }
 
-/** 从文件树节点中收集所有文件路径 */
 function collectFileTreePaths(entries: any[], basePath: string): string[] {
   const paths: string[] = [];
   for (const entry of entries) {
@@ -29,15 +28,6 @@ function collectFileTreePaths(entries: any[], basePath: string): string[] {
   return paths;
 }
 
-/**
- * 构建 Agent 上下文
- *
- * 从编辑器 store 和 Monaco 实例收集：
- * - 已打开的文件（路径 + 内容）
- * - 项目文件树
- * - 光标位置
- * - 选中的文本
- */
 function buildAgentContext(activeFilePath?: string): AgentContext {
   const store = useEditorStore();
   const editor = getEditorInstance();
@@ -71,16 +61,9 @@ function buildAgentContext(activeFilePath?: string): AgentContext {
     }
   }
 
-  return { openFiles, fileTree, cursorPosition, selection, conversationHistory: [] as AgentContext['conversationHistory'] };
+  return { openFiles, fileTree, cursorPosition, selection, conversationHistory: [] };
 }
 
-/**
- * Agent 聊天状态 composable
- *
- * 管理消息列表、处理状态、模式配置和编辑结果。
- * 支持非流式（sendMessage）和流式（streamMessage）两种通信方式。
- * 流式模式下根据 workspaceMode 自动选择 local 或 server 路径。
- */
 export function useAgent() {
   const messages = ref<ChatMessage[]>([]);
   const isProcessing = ref(false);
@@ -89,7 +72,6 @@ export function useAgent() {
   const lastEdits = ref<ParsedEdit[]>([]);
   const toolStatus = ref<string>('');
 
-  /** 将 ProviderConfig 合并到 AgentConfig */
   function buildRequestConfig(provider?: ProviderConfig | null): AgentConfig {
     const cfg: AgentConfig = { ...config.value };
     if (provider) {
@@ -100,7 +82,6 @@ export function useAgent() {
     return cfg;
   }
 
-  /** 从消息中提取编辑操作（仅 build 模式生效） */
   function extractEdits(msg: ChatMessage) {
     if (config.value.mode === 'build') {
       const edits = parseEditsFromText(msg.content);
@@ -111,7 +92,6 @@ export function useAgent() {
     }
   }
 
-  /** 非流式发送消息 */
   async function sendMessage(content: string, provider?: ProviderConfig | null, activeFilePath?: string) {
     const userMsg: ChatMessage = {
       id: `msg_${Date.now()}`,
@@ -145,12 +125,6 @@ export function useAgent() {
     }
   }
 
-  /**
-   * 流式发送消息
-   *
-   * local 模式：调用 runLocalAgentLoop（直接调 LLM API + 工具循环）
-   * server 模式：调用 agentService.streamMessage（HTTP SSE 流式）
-   */
   async function streamMessage(
     content: string,
     provider?: ProviderConfig | null,
@@ -169,7 +143,6 @@ export function useAgent() {
     lastEdits.value = [];
     toolStatus.value = '';
 
-    // 先创建空的助手消息占位，流式内容逐步填充
     const assistantMsgId = `msg_${Date.now() + 1}`;
     messages.value.push({
       id: assistantMsgId,
@@ -186,7 +159,6 @@ export function useAgent() {
       const history = messages.value.slice(0, -1).filter(m => m.id !== assistantMsgId);
 
       if (store.workspaceMode === 'local' && localClient) {
-        // 本地 Agent 循环模式
         const fullContent = await runLocalAgentLoop(
           localClient,
           buildRequestConfig(provider),
@@ -206,7 +178,6 @@ export function useAgent() {
         const msg = messages.value.find(m => m.id === assistantMsgId);
         if (msg) msg.content = fullContent;
       } else {
-        // 服务端 SSE 流式模式
         const streamCtx = {
           ...ctx,
           conversationHistory: history,

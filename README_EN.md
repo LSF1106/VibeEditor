@@ -26,9 +26,9 @@ AI-powered code editor built with **Monaco Editor** + **Vue 3**, supporting both
 |---|---------|--------|-------|
 | 8 | Agent chat panel | ✅ | `AgentPanel.vue`, supports chat/edit/agent modes, Markdown + KaTeX rendering, multi-provider config management |
 | 9 | Agent streaming response (SSE) | ✅ | Server SSE + frontend stream parsing fully working with real LLM backend |
-| 10 | Agent generates edits and applies to files | ⚠️ | `<edit>` tag parsing → file writing pipeline works end-to-end; but edit/agent mode system prompt hardcoded to `chat` in `provider.ts` (bug); core `executor.ts` not wired |
-| 11 | Agent context builder (open files + cursor + selection) | ✅ | `core/agent/context.ts` — `buildContextPrompt()` implemented; frontend `useAgent.ts` does not populate `openFiles`/`fileTree` context in requests |
-| 12 | Edit undo / redo | ⚠️ | `core/agent/executor.ts` — `revertEdits()` implemented; not wired to frontend UI |
+| 10 | Agent generates edits and applies to files | ⚠️ | `<edit>` tag parsing → file writing pipeline works end-to-end; but edit/agent mode system prompt hardcoded to `chat` in `@vibeeditor/agent` `provider.ts` (bug); `executor.ts` not wired |
+| 11 | Agent context builder (open files + cursor + selection) | ✅ | `@vibeeditor/agent` — `buildContextPrompt()` implemented; frontend `useAgent.ts` does not populate `openFiles`/`fileTree` context in requests |
+| 12 | Edit undo / redo | ⚠️ | `@vibeeditor/agent` — `revertEdits()` implemented; not wired to frontend UI |
 | 13 | LLM backend integration (OpenAI / Anthropic / etc.) | ⚠️ | OpenAI-compatible API via raw fetch (works with Ollama, vLLM, etc.); no SDK dependencies; edit/agent mode system prompt bug (#10) needs fix |
 
 ### P2 — File System & Project Management
@@ -99,12 +99,39 @@ AI-powered code editor built with **Monaco Editor** + **Vue 3**, supporting both
 
 ## Architecture Docs
 
-### 1. Architecture Diagram — Package Dependencies & Deployment Topology
+### 1. Package Dependencies
+
+> Arrow direction: `A --> B` means B depends on A
+
+```mermaid
+graph TD
+    agent["@vibeeditor/agent<br/>AI Agent Framework<br/><br/>· AgentConfig / AgentContext<br/>· IAgentProvider<br/>· OpenAILikeProvider<br/>· AgentLoop<br/>· executeEdits / parseToolCalls"]
+    core["@vibeeditor/core<br/>Shared Core<br/><br/>· IFileSystem<br/>· LocalFileSystem / ServerFS / VirtualFS<br/>· EditorTab / EditOperation<br/>· EditorState management"]
+    server["@vibeeditor/server<br/>Express Backend<br/><br/>· /api/files/* REST API<br/>· /api/agent/* SSE streaming<br/>· Path traversal protection"]
+    web["@vibeeditor/web<br/>Vue 3 Frontend<br/><br/>· Monaco Editor wrapper<br/>· AgentPanel chat UI<br/>· useAgent / useFileSystem<br/>· agentService SSE client"]
+    electron["@vibeeditor/electron<br/>Electron Desktop Shell<br/><br/>· IPC bridge (preload.ts)<br/>· Native file dialogs<br/>· Main process fs ops"]
+
+    agent --> core
+    agent --> server
+    agent --> web
+    core --> server
+    core --> web
+    core --> electron
+```
+
+**Key changes (vs. old architecture)**:
+- **New** `@vibeeditor/agent` — Agent code extracted from `core` and `server` into a standalone agent module
+- **`@vibeeditor/core` slimmed** — Removed `agent/` directory (types, context, executor), now focuses on file system and editor state
+- **`@vibeeditor/server` slimmed** — Removed `agent/` directory (provider, loop), now depends on `@vibeeditor/agent`
+- **Zero external dependencies** — `@vibeeditor/agent` depends on no workspace packages, decoupled from platform via `IAgentFileSystem`
+
+### 2. Architecture Diagram — Package Dependencies & Deployment Topology
 
 ```mermaid
 graph TB
     subgraph Packages["npm Workspace Packages"]
-        core["@vibeeditor/core<br/>Shared Types / FS Abstraction / Agent Framework"]
+        agent["@vibeeditor/agent<br/>AI Agent Framework · LLM Provider · Tool Loop"]
+        core["@vibeeditor/core<br/>Shared Types / FS Abstraction / Editor State"]
         server["@vibeeditor/server<br/>Express · REST API"]
         web["@vibeeditor/web<br/>Vue 3 · Vite · Monaco"]
         electron["@vibeeditor/electron<br/>Electron Shell · IPC Bridge"]
@@ -116,6 +143,9 @@ graph TB
         desktop["Electron Desktop<br/>Native FS Dialogs"]
     end
 
+    agent --> core
+    agent --> server
+    agent --> web
     core --> server
     core --> web
     core --> electron
@@ -127,11 +157,11 @@ graph TB
     web -->|File System Access API| browser
 ```
 
-**Note**: `@vibeeditor/core` is the type and logic foundation for all packages. The `web` frontend proxies `/api` to `server` via Vite in development. In Electron mode, the frontend is loaded by the Electron window, and file operations are bridged to the main process Node.js `fs` through `preload.ts` IPC.
+**Note**: `@vibeeditor/agent` is a standalone AI Agent framework providing LLM Provider, Agent Loop, and tool execution. `@vibeeditor/core` focuses on file system abstraction and editor state management. The `web` frontend proxies `/api` to `server` via Vite in development. In Electron mode, the frontend is loaded by the Electron window, and file operations are bridged to the main process Node.js `fs` through `preload.ts` IPC.
 
-### 2. Flowcharts
+### 3. Flowcharts
 
-#### 2.1 Runtime Environment Detection & File Service Selection
+#### 3.1 Runtime Environment Detection & File Service Selection
 
 ```mermaid
 flowchart TD
@@ -148,7 +178,7 @@ flowchart TD
 
 **Note**: `detectEnvironment()` in `fileService.ts:22` detects and caches the runtime environment once. All subsequent file operations go through the unified `FileServiceClient` interface; upper-layer components are unaware of the underlying differences.
 
-#### 2.2 Agent Edit Operation Flow
+#### 3.2 Agent Edit Operation Flow
 
 ```mermaid
 flowchart TD
@@ -164,7 +194,7 @@ flowchart TD
 
 **Note**: Every agent edit operation automatically backs up the original file content before writing, enabling the user to roll back all changes with a single `undoLastEdits()` call.
 
-### 3. Sequence Diagram — Agent Edit & Undo
+### 4. Sequence Diagram — Agent Edit & Undo
 
 ```mermaid
 sequenceDiagram
@@ -205,7 +235,7 @@ sequenceDiagram
 
 **Note**: `handleApplyEdits` snapshots the original content before each write; `undoLastEdits` iterates `lastEditedFiles` to restore each file. `fs` is created via `reactive(useFileSystem())` — Vue 3's `reactive()` auto-unwraps nested `ref`s, so access uses `fs.client` directly, not `fs.client.value`.
 
-### 4. Class Diagram — Core Type Hierarchy
+### 5. Class Diagram — Core Type Hierarchy
 
 ```mermaid
 classDiagram
@@ -331,6 +361,7 @@ The frontend auto-detects the runtime environment and selects the appropriate fi
 ## Build
 
 ```bash
+npm run build:agent     # Build AI Agent framework
 npm run build:core      # Build shared core
 npm run build:server    # Build Express backend
 npm run build:web       # Build Vue frontend (to packages/web/dist/)
@@ -357,6 +388,14 @@ npm run build:all       # Build everything
 
 ## Project Structure
 
+### `@vibeeditor/agent`
+- `types.ts` — Core types: `AgentConfig`, `AgentContext`, `IAgentProvider`, `IAgentFileSystem`, `EditOperation`
+- `context.ts` — Context builders (`createEmptyContext`, `buildContextPrompt`, `getConversationSummary`)
+- `executor.ts` — Edit execution engine (`executeEdits`, `revertEdits`)
+- `parser.ts` — LLM response parsing (`parseToolCalls`, `parseEditsFromText`)
+- `provider.ts` — `OpenAILikeProvider` — OpenAI-compatible LLM client (native fetch, no SDK)
+- `loop.ts` — `AgentLoop` — Multi-turn autonomous coding loop (read_file / list_dir / search_code tools)
+
 ### `@vibeeditor/core`
 - `fs/types.ts` — `IFileSystem` interface, `FileEntry`, `FileContent`
 - `fs/local.ts` — `LocalFileSystem` (Node.js fs)
@@ -364,9 +403,6 @@ npm run build:all       # Build everything
 - `fs/virtual.ts` — `VirtualFileSystem` (in-memory)
 - `editor/types.ts` — `EditorTab`, `EditOperation`, language detection
 - `editor/document.ts` — Tab/document state management
-- `agent/types.ts` — `AgentContext`, `AgentEditResult`, `IAgentProvider`
-- `agent/context.ts` — Context builder for LLM prompts
-- `agent/executor.ts` — Edit operation executor with undo support
 
 ### `@vibeeditor/web`
 - `components/editor/MonacoEditor.vue` — Monaco editor wrapper
@@ -384,8 +420,6 @@ npm run build:all       # Build everything
 ### `@vibeeditor/server`
 - `routes/files.ts` — File CRUD API with path traversal protection
 - `routes/agent.ts` — Agent chat + streaming endpoints
-- `agent/provider.ts` — OpenAI-compatible LLM provider (raw fetch)
-- `middleware/auth.ts` — Optional Bearer token auth
 
 ### `@vibeeditor/electron`
 - `main.ts` — Window creation, dev/production mode switching (uses `app.isPackaged` to detect: dev mode loads `http://localhost:5173`, production mode loads `web/dist/index.html`)

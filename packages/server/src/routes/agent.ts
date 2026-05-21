@@ -1,8 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { OpenAILikeProvider } from '../agent/provider';
-import { AgentLoop } from '../agent/loop';
-import type { AgentContext, AgentConfig, AgentEditResult } from '@vibeeditor/core';
-import { executeEdits } from '@vibeeditor/core';
+import { OpenAILikeProvider, AgentLoop, executeEdits, type AgentContext, type AgentConfig, type AgentEditResult } from '@vibeeditor/agent';
 import { LocalFileSystem } from '@vibeeditor/core';
 
 const router = Router();
@@ -67,7 +64,8 @@ router.post('/stream', async (req: Request, res: Response) => {
 
   try {
     if (config.mode === 'build') {
-      const loop = new AgentLoop(rootPath);
+      const fs = new LocalFileSystem(rootPath);
+      const loop = new AgentLoop(fs);
       await loop.run(provider, config, message, context as AgentContext, writeSSE);
     } else {
       await provider.streamMessage(message, context as AgentContext, (chunk: string) => writeSSE({ chunk }));
@@ -98,7 +96,6 @@ router.post('/apply-edits', async (req: Request, res: Response) => {
 
     const fs = new LocalFileSystem(rootPath);
     const result = await executeEdits(fs, edits as AgentEditResult[]);
-    fs.dispose();
 
     res.json(result);
   } catch (err) {

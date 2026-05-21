@@ -1,6 +1,6 @@
 # @vibeeditor/core
 
-Shared core logic for VibeEditor — file system abstraction, editor state management, and AI agent framework.
+Shared core logic for VibeEditor — file system abstraction and editor state management.
 
 ## Directory Structure
 
@@ -12,13 +12,9 @@ src/
 │   ├── local.ts          # Local file system (Node.js fs)
 │   ├── server.ts         # Server file system (REST API)
 │   └── virtual.ts        # Virtual file system (in-memory Map)
-├── editor/               # Editor state management
-│   ├── types.ts          # EditorTab, EditorState, and related types
-│   └── document.ts       # Pure functions for tab and editor state
-└── agent/                # AI Agent framework
-    ├── types.ts          # AgentContext, IAgentProvider, and related types
-    ├── context.ts        # Context assembly utilities
-    └── executor.ts       # Edit execution engine (apply & revert)
+└── editor/               # Editor state management
+    ├── types.ts          # EditorTab, EditorState, and related types
+    └── document.ts       # Pure functions for tab and editor state
 ```
 
 ## Module Details
@@ -92,57 +88,6 @@ All functions return new state objects without mutating the original:
 
 - `getLanguageFromPath(filePath)` — Maps file extensions to Monaco Editor language identifiers (30+ languages supported), falls back to `'plaintext'`
 
-### 3. Agent Framework (`agent/`)
-
-Core abstractions for an AI coding assistant: types, context construction, and edit execution.
-
-#### Core Interface
-
-`IAgentProvider` is the plugin contract for AI backends:
-
-| Member | Description |
-|--------|-------------|
-| `name` / `displayName` | Provider identity |
-| `initialize(config)` | Initialize with `AgentConfig` |
-| `sendMessage(message, context)` | Send a message and get a reply |
-| `streamMessage(message, context, onChunk)` | Stream a message (optional) |
-| `dispose()` | Cleanup resources |
-
-#### AgentConfig
-
-`AgentConfig` includes: `mode` (`'build' | 'plan'`), `model`, `apiUrl`, `apiKey`, `systemPrompt`, `temperature`, `maxTokens`.
-
-#### AgentContext
-
-`AgentContext` captures a complete snapshot of the coding environment:
-- `openFiles` — Currently open files (path + content)
-- `fileTree` — Project file tree listing
-- `cursorPosition` — User cursor position
-- `selection` — User text selection
-- `conversationHistory` — Chat history
-
-#### Context Assembly (`context.ts`)
-
-| Function | Description |
-|----------|-------------|
-| `createEmptyContext()` | Create an empty agent context |
-| `buildContextPrompt(context)` | Assembles the context into structured Markdown. Includes: file tree overview, open files (fenced code blocks), cursor position, selection info |
-| `getConversationSummary(messages, maxMessages?)` | Joins conversation history into a summary string |
-
-#### Edit Execution Engine (`executor.ts`)
-
-Applies AI-generated edit operations to the file system:
-
-- **`executeEdits(fs, edits)`** — Batch applies edits:
-  1. Reads target files (starts with `''` for new files)
-  2. Applies operations sequentially by line/column positioning
-  3. Writes back via the file system
-  4. Returns `ExecutionResult` (`success`, `errors[]`, `applied` count)
-
-- **`revertEdits(content, operations)`** — Reverses edits by flipping insert ↔ delete
-
-- **`applyOperation` (private)** — Single operation application: insert at position, delete a range (single or multi-line), replace a range with new text
-
 ## Architecture Patterns
 
 ### Strategy Pattern — File System
@@ -152,10 +97,6 @@ One `IFileSystem` interface, three implementations. Higher-level code never care
 ### Pure Functional State — Editor
 
 `EditorState` is a plain value object. All operations return new state without mutation, consistent with Redux/Elm architecture.
-
-### Plugin Contract — Agent Provider
-
-`IAgentProvider` is a standard interface for AI backends, decoupled from any specific API. Supports Anthropic, OpenAI, Ollama, or any compatible API.
 
 ### Discriminated Union Types
 
@@ -169,17 +110,26 @@ One `IFileSystem` interface, three implementations. Higher-level code never care
 
 ```
                     src/index.ts (barrel export)
-                   /         |           \
-            src/fs/     src/editor/    src/agent/
-             / | \        /    \        /   |   \
-        types local server types document types context executor
+                   /              \
+            src/fs/            src/editor/
+             / | \               /    \
+        types local server   types document
 ```
 
 - `fs/` is fully independent
 - `editor/` depends only on its own `types.ts`
-- `agent/types` depends on `editor/types` (`EditOperation`)
-- `agent/executor` depends on `fs/types` (`IFileSystem`) and `editor/types` (`EditOperation`)
 - No circular dependencies
+
+## Related Module
+
+AI Agent functionality has been extracted into the standalone **[`@vibeeditor/agent`](../agent/)** package, providing:
+
+- **Type Definitions** — `AgentConfig`, `AgentContext`, `IAgentProvider`, `IAgentFileSystem`
+- **Context Assembly** — `createEmptyContext()`, `buildContextPrompt()`, `getConversationSummary()`
+- **Edit Execution Engine** — `executeEdits()`, `revertEdits()`
+- **LLM Provider** — `OpenAILikeProvider` (OpenAI-compatible API client)
+- **Agent Loop** — `AgentLoop` (multi-turn autonomous coding loop with read_file / list_dir / search_code tools)
+- **Parser** — `parseToolCalls()`, `parseEditsFromText()`
 
 ## Technical Details
 

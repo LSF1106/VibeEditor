@@ -90,6 +90,13 @@ const props = defineProps<{ visible: boolean }>();
 const emit = defineEmits<{ close: [] }>();
 
 const settings = useProviderSettings();
+
+// ===== 编辑状态管理 =====
+// editingId: 当前编辑的提供商 ID（null = 新增模式）
+// editing:   是否显示编辑表单
+// 两种进入方式：
+//   - 点击已有提供商 → startEdit() → editingId 设为该 ID
+//   - 点击"+ 添加提供商" → startAdd() → editingId 为 null
 const editingId = ref<string | null>(null);   // 当前编辑的提供商 ID（null = 新增）
 const editing = ref(false);                     // 是否显示编辑表单
 const fetchingModels = ref(false);             // 是否正在获取模型列表
@@ -127,7 +134,15 @@ function startAdd() {
   fetchError.value = '';
 }
 
-/** 从提供商 API 获取可用模型列表 */
+/**
+ * 从提供商 API 获取可用模型列表
+ *
+ * 兼容两种 API 格式（按顺序尝试）：
+ * 1. OpenAI 兼容：GET {apiUrl}/models → 取 data[].id
+ * 2. Ollama 格式：  GET {baseUrl}/api/tags → 取 models[].name
+ *
+ * 任一格式成功即返回结果，都失败则抛出错误。
+ */
 async function fetchModels() {
   fetchingModels.value = true;
   availableModels.value = [];
@@ -146,7 +161,13 @@ async function fetchModels() {
   }
 }
 
-/** 保存表单（新增或更新） */
+/**
+ * 保存表单（新增或更新）
+ *
+ * 根据 editingId 判断操作类型：
+ * - editingId 非 null → 更新现有提供商
+ * - editingId 为 null  → 新增提供商
+ */
 function saveForm() {
   if (!form.name.trim() || !form.apiUrl.trim() || !form.model.trim()) return;
 

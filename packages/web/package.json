@@ -11,6 +11,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@vibeeditor/agent": "0.1.0",
     "@vibeeditor/core": "0.1.0",
     "katex": "^0.16.46",
     "markdown-it": "^14.1.1",

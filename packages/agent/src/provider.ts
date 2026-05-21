@@ -1,4 +1,4 @@
-import type { IAgentProvider, AgentConfig, AgentContext, AgentMessage } from '@vibeeditor/core';
+import type { IAgentProvider, AgentConfig, AgentContext, AgentMessage } from './types';
 
 interface LLMConfig {
   apiUrl: string;
@@ -8,9 +8,9 @@ interface LLMConfig {
 
 function getLLMConfig(config: AgentConfig): LLMConfig {
   return {
-    apiUrl: config.apiUrl || process.env.LLM_API_URL || 'https://api.openai.com/v1',
-    apiKey: config.apiKey || process.env.LLM_API_KEY || '',
-    model: config.model || process.env.LLM_MODEL || 'gpt-4o',
+    apiUrl: config.apiUrl || (typeof process !== 'undefined' && process.env?.LLM_API_URL) || 'https://api.openai.com/v1',
+    apiKey: config.apiKey || (typeof process !== 'undefined' && process.env?.LLM_API_KEY) || '',
+    model: config.model || (typeof process !== 'undefined' && process.env?.LLM_MODEL) || 'gpt-4o',
   };
 }
 

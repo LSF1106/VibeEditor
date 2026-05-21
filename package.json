@@ -4,6 +4,7 @@
   "private": true,
   "description": "VibeEditor - An AI-powered code editor with Monaco Editor, supporting both server and Electron deployment",
   "workspaces": [
+    "packages/agent",
     "packages/core",
     "packages/server",
     "packages/electron",
@@ -14,6 +15,7 @@
     "dev:web": "npm run build:core && npm run dev -w packages/web",
     "dev:electron": "npm run build:core && npm run build:electron && concurrently \"npm run dev -w packages/web\" \"npm run dev -w packages/electron\"",
     "dev:all": "npm run build:core && concurrently \"npm run dev -w packages/server\" \"npm run dev -w packages/web\"",
+    "build:agent": "npm run build -w packages/agent",
     "build:core": "npm run build -w packages/core",
     "build:web": "npm run build -w packages/web",
     "build:server": "npm run build -w packages/server",

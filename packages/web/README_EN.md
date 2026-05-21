@@ -121,19 +121,19 @@ Actions: `openFile`, `newUntitled`, `closeTab`, `updateContent`, `saveTab`, `set
 
 - `createAgentService()` provides `sendMessage()` (POST `/api/agent/chat`) and `streamMessage()` (POST `/api/agent/stream`, SSE parsing)
 - Supports `tool_start` / `tool_end` / `tool_result` stream events
+- Types imported from `@vibeeditor/agent`
 
 #### `localAgentLoop.ts` — Local Agent Loop
 
 - Server-independent autonomous agent execution engine
 - Directly calls OpenAI-compatible chat completions API
-- Tool call parsing + execution loop (max 15 turns)
+- Tool call parsing delegated to `@vibeeditor/agent`'s `parseToolCalls`
 - Three tools: `<read_file>`, `<list_dir>`, `<search_code>`
 - Uses `FileServiceClient` to execute tool operations locally
 
 #### `editParser.ts` — Edit Parsing
 
-- Regex matches `<edit path="...">...</edit>` blocks
-- Auto-strips wrapping markdown code block markers
+- Thin wrapper, re-exports `parseEditsFromText` from `@vibeeditor/agent`
 
 #### `editorInstance.ts` — Editor Singleton
 

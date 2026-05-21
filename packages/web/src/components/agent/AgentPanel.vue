@@ -111,6 +111,8 @@ const inputHeight = ref(90);
 let isResizingInput = false;
 
 // ===== 自动滚动控制 =====
+// 策略：用户若手动上滚，暂停自动滚动；滑回底部时恢复
+// MutationObserver 监听 DOM 变化，配合 rAF 节流避免高频回调导致卡顿
 const userScrolledUp = ref(false);  // 用户是否手动上滚了
 let scrollRafId = 0;
 let observer: MutationObserver | null = null;
@@ -138,13 +140,20 @@ function scheduleScroll(force = false) {
 }
 
 /** 用户手动上滚时暂停自动滚动，滑回底部时恢复自动滚动 */
+/** 用户手动滚动时决定是否恢复/暂停自动滚动
+ *
+ * isNearBottom(): 滚动到底部 50px 以内视为"用户在底部"
+ * userScrolledUp: 用户离开底部 → true（暂停自滚）；滑回底部 → false（恢复自滚）
+ */
 function onMessagesScroll() {
   userScrolledUp.value = !isNearBottom();
 }
 
 /**
  * MutationObserver 监听消息区域 DOM 变化
- * 当流式内容、公式渲染等导致内容增加且用户在底部时，自动滚动
+ *
+ * 当流式内容追加、KaTeX 公式渲染等导致 DOM 变化时，若用户在底部则自动滚动。
+ * 使用 rAF 节流避免高频 MutationObserver 回调导致卡顿。
  */
 function setupObserver() {
   const el = messagesContainer.value;
@@ -159,7 +168,16 @@ function setupObserver() {
   });
 }
 
-/** 发送消息 */
+/**
+ * 发送消息的完整流程
+ *
+ * 1. 清空输入框，重置自动滚动状态
+ * 2. 调用 agent.streamMessage() 开始流式（根据环境分发 local/server）
+ * 3. nextTick 后滚动到底部（用户消息已渲染）
+ * 4. 等待流式完成
+ * 5. 如果有编辑结果（<edit> 块），通过 emit('apply-edits') 通知父组件写入文件
+ * 6. 强制滚动到底部
+ */
 async function send() {
   const text = input.value.trim();
   if (!text) return;

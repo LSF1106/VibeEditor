@@ -121,19 +121,19 @@ Pinia Composition API 风格的状态存储，管理：
 
 - `createAgentService()` 提供 `sendMessage()`（POST `/api/agent/chat`）和 `streamMessage()`（POST `/api/agent/stream`，SSE 流式解析）
 - 支持 `tool_start` / `tool_end` / `tool_result` 等流式事件
+- 类型从 `@vibeeditor/agent` 导入
 
 #### `localAgentLoop.ts` —— 本地 Agent 循环
 
 - 不依赖服务器的自主 Agent 执行引擎
 - 直接调用 OpenAI 兼容的 chat completions API
-- 实现工具调用解析 + 执行循环（最多 15 轮）
+- 工具调用解析使用 `@vibeeditor/agent` 的 `parseToolCalls`
 - 三种工具：`<read_file>`, `<list_dir>`, `<search_code>`
 - 使用 `FileServiceClient` 在本地执行工具操作
 
 #### `editParser.ts` —— 编辑解析
 
-- 正则匹配 `<edit path="...">...</edit>` 块
-- 自动去除包裹的 markdown 代码块标记
+- 薄封装，从 `@vibeeditor/agent` 重新导出 `parseEditsFromText`
 
 #### `editorInstance.ts` —— 编辑器单例
 
