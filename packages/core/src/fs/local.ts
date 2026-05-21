@@ -3,6 +3,13 @@ import * as fs from 'fs/promises';
 import * as fsSync from 'fs';
 import * as path from 'path';
 
+/**
+ * 本地文件系统实现 —— 封装 Node.js fs/promises
+ *
+ * 直接操作本地磁盘，支持文件监听（fs.watch）。
+ * 所有路径操作均基于构造时指定的 rootPath 进行解析，
+ * 确保不会越权访问工作目录之外的文件。
+ */
 export class LocalFileSystem implements IFileSystem {
   readonly type = 'local' as const;
   readonly cwd: string;
@@ -11,6 +18,7 @@ export class LocalFileSystem implements IFileSystem {
     this.cwd = path.resolve(rootPath);
   }
 
+  /** 将相对路径解析为绝对路径 */
   private resolvePath(filePath: string): string {
     if (path.isAbsolute(filePath)) return filePath;
     return path.resolve(this.cwd, filePath);
@@ -48,6 +56,7 @@ export class LocalFileSystem implements IFileSystem {
           modifiedAt: stat.mtimeMs,
         });
       } catch {
+        // 文件可能在读取期间被删除，跳过 stat 失败的条目
         result.push({
           name: entry.name,
           path: relativePath.replace(/\\/g, '/'),
@@ -55,6 +64,7 @@ export class LocalFileSystem implements IFileSystem {
         });
       }
     }
+    // 目录优先，同类型按名称字母序排列
     return result.sort((a, b) => {
       if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
       return a.name.localeCompare(b.name);
@@ -105,6 +115,7 @@ export class LocalFileSystem implements IFileSystem {
     const watcher = fsSync.watch(p, { recursive: true }, (eventType, filename) => {
       if (!filename) return;
       const relativePath = path.relative(this.cwd, path.join(p, filename)).replace(/\\/g, '/');
+      // fs.watch 仅提供 'rename' 和 'change' 两种事件，将 rename 映射为 delete
       const type = eventType === 'rename' ? 'delete' : 'change';
       callback({ type, path: relativePath });
     });

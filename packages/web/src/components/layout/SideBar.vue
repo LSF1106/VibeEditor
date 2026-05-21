@@ -28,6 +28,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 
+/** 侧边栏面板区域 */
 export interface SideBarSection {
   id: string;
   label: string;
@@ -39,6 +40,7 @@ defineProps<{
   sections: SideBarSection[];
 }>();
 
+/** 折叠状态集合 —— 包含在其中的面板 ID 表示已折叠 */
 const collapsed = ref(new Set<string>());
 
 function toggle(id: string) {

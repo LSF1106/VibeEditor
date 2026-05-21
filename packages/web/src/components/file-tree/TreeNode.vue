@@ -30,8 +30,8 @@
 import { ref } from 'vue';
 
 const props = defineProps<{
-  node: any;
-  depth: number;
+  node: any;      // 当前节点数据
+  depth: number;  // 嵌套深度（用于计算缩进）
 }>();
 
 const emit = defineEmits<{
@@ -43,10 +43,12 @@ const expanded = ref(false);
 const loadingChildren = ref(false);
 const children = ref<any[]>([]);
 
+/** 点击处理：目录节点展开/折叠，文件节点触发选择 */
 function handleClick() {
   if (props.node.isDirectory) {
     if (!expanded.value) {
       expanded.value = true;
+      // 优先使用内联 children，否则触发父级异步加载
       if (props.node.children && props.node.children.length > 0) {
         children.value = props.node.children;
       } else {
@@ -61,6 +63,7 @@ function handleClick() {
   }
 }
 
+/** 供父组件在异步加载完成后设置子节点 */
 function setChildren(newChildren: any[]) {
   children.value = newChildren;
   loadingChildren.value = false;

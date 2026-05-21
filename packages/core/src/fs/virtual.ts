@@ -1,5 +1,6 @@
 import { IFileSystem, FileEntry, WriteFileOptions } from './types';
 
+/** 虚拟文件树的节点 */
 interface VirtualNode {
   name: string;
   isDirectory: boolean;
@@ -9,6 +10,13 @@ interface VirtualNode {
   modifiedAt: number;
 }
 
+/**
+ * 虚拟文件系统实现 —— 纯内存文件树
+ *
+ * 基于递归 Map<string, VirtualNode> 构建完整的文件树结构。
+ * 适用于测试、沙箱预览、或无文件系统环境的场景。
+ * dispose() 会清空根节点的所有子节点。
+ */
 export class VirtualFileSystem implements IFileSystem {
   readonly type = 'virtual' as const;
   readonly cwd: string;
@@ -19,6 +27,15 @@ export class VirtualFileSystem implements IFileSystem {
     this.root = { name: rootName, isDirectory: true, children: new Map(), modifiedAt: Date.now() };
   }
 
+  /**
+   * 路径解析 —— 沿文件树逐级查找
+   *
+   * 返回 { node, parent, name }：
+   * - node: 目标节点（若不存在则为父目录节点）
+   * - parent: 父节点
+   * - name: 目标名称
+   * 返回 null 表示路径中存在非目录中间节点
+   */
   private resolve(path: string): { node: VirtualNode; parent: VirtualNode | null; name: string } | null {
     const parts = path.replace(/\\/g, '/').split('/').filter(Boolean);
     if (parts.length === 0) return { node: this.root, parent: null, name: this.root.name };
@@ -44,6 +61,7 @@ export class VirtualFileSystem implements IFileSystem {
     const parts = filePath.replace(/\\/g, '/').split('/').filter(Boolean);
     if (parts.length === 0) throw new Error('Empty path');
     let current = this.root;
+    // 逐级创建缺失的中间目录
     for (let i = 0; i < parts.length - 1; i++) {
       let child = current.children.get(parts[i]);
       if (!child) {
@@ -54,6 +72,8 @@ export class VirtualFileSystem implements IFileSystem {
     }
     const name = parts[parts.length - 1];
     const existing = current.children.get(name);
+    // 不允许用文件覆盖目录
+    if (existing && existing.isDirectory) throw new Error(`Cannot write file over directory: ${filePath}`);
     const node: VirtualNode = {
       name,
       isDirectory: false,
@@ -62,7 +82,6 @@ export class VirtualFileSystem implements IFileSystem {
       size: Buffer.byteLength(content, 'utf-8'),
       modifiedAt: Date.now(),
     };
-    if (existing && existing.isDirectory) throw new Error(`Cannot write file over directory: ${filePath}`);
     current.children.set(name, node);
   }
 
@@ -95,6 +114,7 @@ export class VirtualFileSystem implements IFileSystem {
         modifiedAt: child.modifiedAt,
       });
     }
+    // 目录优先，同类型按名称字母序排列
     return entries.sort((a, b) => {
       if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
       return a.name.localeCompare(b.name);
@@ -117,6 +137,7 @@ export class VirtualFileSystem implements IFileSystem {
   async deleteDir(dirPath: string, _recursive = true): Promise<void> {
     const res = this.resolve(dirPath);
     if (!res || !res.node.isDirectory) throw new Error(`Directory not found: ${dirPath}`);
+    // 从父节点的 children 中移除
     if (res.parent) {
       res.parent.children.delete(res.name);
     }
@@ -143,6 +164,7 @@ export class VirtualFileSystem implements IFileSystem {
   async rename(oldPath: string, newPath: string): Promise<void> {
     const oldRes = this.resolve(oldPath);
     if (!oldRes || !oldRes.parent) throw new Error(`Source not found: ${oldPath}`);
+    // 读取 → 写入新路径 → 删除旧路径（实现"移动"语义）
     const content = await this.readFile(oldPath);
     await this.writeFile(newPath, content);
     await this.deleteFile(oldPath);

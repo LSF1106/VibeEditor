@@ -96,6 +96,7 @@ defineProps<{
   sidebarCollapsed?: boolean;
 }>();
 
+// 纯展示组件，所有操作通过 emit 事件向上通知 MainLayout
 defineEmits<{
   'open-folder': [];
   'connect-server': [];

@@ -1,4 +1,6 @@
-// 从 LLM 回复中解析 <edit path="...">...</edit> 块
+// 从 LLM 回复中解析 <edit path="...">...</edit> 编辑块
+// Agent 生成的编辑指令通过此 XML 标签格式嵌入回复内容
+
 export interface ParsedEdit {
   path: string;
   content: string;
@@ -6,7 +8,8 @@ export interface ParsedEdit {
 
 export function parseEditsFromText(text: string): ParsedEdit[] {
   const edits: ParsedEdit[] = [];
-  // 匹配 <edit path="xxx"> ... </edit> 或 <edit path="xxx">\n```lang\n...\n```\n</edit>
+  // 匹配 <edit path="xxx"> ... </edit>
+  // 内容可能是纯文本或包裹在 ```lang ... ``` 代码块中
   const re = /<edit\s+path="([^"]+)"\s*>([\s\S]*?)<\/edit>/g;
   let match: RegExpExecArray | null;
 

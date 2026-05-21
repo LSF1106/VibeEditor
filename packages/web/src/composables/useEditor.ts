@@ -1,9 +1,17 @@
 import { ref, watch, onBeforeUnmount, type Ref } from 'vue';
 
+/**
+ * 编辑器辅助 composable
+ *
+ * 提供 Monaco 模型创建/切换、内容获取/更新、选区获取等方法。
+ * 大部分功能已被 editorInstance.ts 单例替代，此 composable 用于
+ * 需要本地编辑器引用的场景。
+ */
 export function useEditor(editorRef: Ref<any>) {
   const monacoRef = ref<any>(null);
   const editorInstance = ref<any>(null);
 
+  /** 创建或切换 Monaco 编辑器模型 */
   function setModel(language: string, content: string) {
     if (!monacoRef.value) return;
     const monaco = monacoRef.value;
@@ -22,6 +30,7 @@ export function useEditor(editorRef: Ref<any>) {
     return editorInstance.value?.getValue() ?? '';
   }
 
+  /** 更新编辑器内容并保持光标位置 */
   function updateContent(content: string) {
     const editor = editorInstance.value;
     if (!editor) return;
@@ -30,6 +39,7 @@ export function useEditor(editorRef: Ref<any>) {
     if (position) editor.setPosition(position);
   }
 
+  /** 获取当前选中的文本及其范围 */
   function getSelection(): { text: string; startLine: number; endLine: number } | null {
     const editor = editorInstance.value;
     if (!editor) return null;

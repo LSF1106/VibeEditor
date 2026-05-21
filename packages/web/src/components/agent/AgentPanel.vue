@@ -110,11 +110,12 @@ const showSettings = ref(false);
 const inputHeight = ref(90);
 let isResizingInput = false;
 
-// 自动滚动控制
-const userScrolledUp = ref(false);
+// ===== 自动滚动控制 =====
+const userScrolledUp = ref(false);  // 用户是否手动上滚了
 let scrollRafId = 0;
 let observer: MutationObserver | null = null;
 
+/** 判断消息区域是否接近底部（50px 容差） */
 function isNearBottom(): boolean {
   const el = messagesContainer.value;
   if (!el) return false;
@@ -126,7 +127,7 @@ function scrollToBottom() {
   if (el) el.scrollTop = el.scrollHeight;
 }
 
-// 用 rAF 节流，避免高频调用导致卡顿
+/** 用 rAF 节流调度滚动，避免高频 MutationObserver 回调导致卡顿 */
 function scheduleScroll(force = false) {
   cancelAnimationFrame(scrollRafId);
   scrollRafId = requestAnimationFrame(() => {
@@ -136,13 +137,15 @@ function scheduleScroll(force = false) {
   });
 }
 
-// 监听滚动事件：用户手动上滚时暂停自动滚动，滑回底部时恢复
+/** 用户手动上滚时暂停自动滚动，滑回底部时恢复自动滚动 */
 function onMessagesScroll() {
   userScrolledUp.value = !isNearBottom();
 }
 
-// MutationObserver：监听消息区域内容变化（新增消息、流式内容、公式渲染等）
-// 当内容增加且用户在底部时，自动滚动
+/**
+ * MutationObserver 监听消息区域 DOM 变化
+ * 当流式内容、公式渲染等导致内容增加且用户在底部时，自动滚动
+ */
 function setupObserver() {
   const el = messagesContainer.value;
   if (!el) return;
@@ -156,6 +159,7 @@ function setupObserver() {
   });
 }
 
+/** 发送消息 */
 async function send() {
   const text = input.value.trim();
   if (!text) return;
@@ -179,6 +183,7 @@ async function send() {
 
   await streamPromise;
 
+  // 流式完成后，若有编辑结果则通知父组件应用
   if (agent.lastEdits.value.length > 0) {
     emit('apply-edits', [...agent.lastEdits.value]);
     agent.lastEdits.value = [];
@@ -187,7 +192,7 @@ async function send() {
   scheduleScroll(true);
 }
 
-// 输入区域高度拖拽
+/** 输入区域高度拖拽（纵向 resize） */
 function startInputResize(e: MouseEvent) {
   isResizingInput = true;
   const startY = e.clientY;

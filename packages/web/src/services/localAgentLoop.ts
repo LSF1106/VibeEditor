@@ -1,13 +1,24 @@
 import type { AgentConfig, AgentContext } from '@vibeeditor/core';
 import type { FileServiceClient } from './fileService';
 
+/** Agent 最大对话轮数，防止无限循环 */
 const MAX_AGENT_TURNS = 15;
 
+/** 解析到的工具调用 */
 interface ParsedTool {
   type: 'read_file' | 'list_dir' | 'search_code';
   params: Record<string, string>;
 }
-   
+
+/**
+ * 从 LLM 回复文本中解析工具调用标签
+ *
+ * 支持的标签格式：
+ * - <read_file path="..."/>
+ * - <list_dir path="..."/>
+ * - <search_code pattern="..." path="..." maxResults="..."/>
+ * - <edit ...> 标签会被跳过（在 executor 中单独处理）
+ */
 function parseToolCalls(text: string): ParsedTool[] {
   const tools: ParsedTool[] = [];
   const re = /<(\w+) ([^>]+)?\s*\/?>/g;
@@ -15,9 +26,10 @@ function parseToolCalls(text: string): ParsedTool[] {
 
   while ((match = re.exec(text)) !== null) {
     const tag = match[1];
-    if (tag === 'edit') continue;
+    if (tag === 'edit') continue; // edit 标签在外部单独解析
     const attrStr = match[2] || '';
 
+    // 解析 XML 属性 key="value"
     const params: Record<string, string> = {};
     const attrRe = /(\w+)="([^"]*)"/g;
     let attrMatch: RegExpExecArray | null;
@@ -37,6 +49,7 @@ function parseToolCalls(text: string): ParsedTool[] {
   return tools;
 }
 
+/** 调用 OpenAI 兼容的聊天补全 API（非流式） */
 async function chatLLM(
   apiUrl: string,
   apiKey: string,
@@ -68,6 +81,7 @@ async function chatLLM(
   return data.choices?.[0]?.message?.content || '';
 }
 
+/** 调用 OpenAI 兼容的聊天补全 API（流式 SSE） */
 async function chatLLMStream(
   apiUrl: string,
   apiKey: string,
@@ -126,7 +140,7 @@ async function chatLLMStream(
           onChunk(delta);
         }
       } catch {
-        // skip unparseable SSE lines
+        // 跳过解析失败的 SSE 行
       }
     }
   }
@@ -134,6 +148,7 @@ async function chatLLMStream(
   return fullContent;
 }
 
+/** 执行 read_file 工具：读取文件并返回带文件头的内容 */
 async function executeReadFile(
   client: FileServiceClient,
   filePath: string
@@ -146,6 +161,7 @@ async function executeReadFile(
   }
 }
 
+/** 执行 list_dir 工具：列目录内容，目录优先排序 */
 async function executeListDir(
   client: FileServiceClient,
   dirPath: string
@@ -167,6 +183,12 @@ async function executeListDir(
   }
 }
 
+/**
+ * 执行 search_code 工具：递归搜索目录中的文件内容匹配
+ *
+ * 跳过 node_modules、.git、dist 目录。
+ * 返回匹配的行号和内容摘要（最多 120 字符）。
+ */
 async function executeSearchCode(
   client: FileServiceClient,
   pattern: string,
@@ -182,7 +204,7 @@ async function executeSearchCode(
     try {
       regex = new RegExp(pattern, 'gi');
     } catch {
-      return;
+      return; // 无效正则，跳过
     }
     const lines = content.split('\n');
     for (let i = 0; i < lines.length && count < maxResults; i++) {
@@ -205,16 +227,17 @@ async function executeSearchCode(
           : `${dirPath}/${entry.name}`;
 
         if (entry.isDirectory) {
+          // 跳过常见的非源码目录
           if (entry.name === 'node_modules' || entry.name === '.git' || entry.name === 'dist') continue;
           await walkDir(entryPath);
         } else {
           try {
             const fileContent = await client.readFile(entryPath);
             matchInContent(entryPath, fileContent);
-          } catch { /* skip unreadable files */ }
+          } catch { /* 跳过无法读取的文件 */ }
         }
       }
-    } catch { /* skip */ }
+    } catch { /* 跳过无法访问的目录 */ }
   }
 
   await walkDir(searchPath || '.');
@@ -223,6 +246,7 @@ async function executeSearchCode(
   return `## Search results for "${pattern}":\n${results.join('\n')}`;
 }
 
+/** 构建 Agent 系统提示词（包含可用工具说明和行为规则） */
 function buildAgentSystemPrompt(config: AgentConfig): string {
   if (config.systemPrompt) return config.systemPrompt;
 
@@ -251,12 +275,23 @@ function buildAgentSystemPrompt(config: AgentConfig): string {
   ].join('\n');
 }
 
+/** 本地 Agent 循环回调接口 */
 export interface LocalLoopCallbacks {
   onChunk: (chunk: string) => void;
   onToolStart: (message: string) => void;
   onToolEnd: (message: string) => void;
 }
 
+/**
+ * 运行本地 Agent 循环
+ *
+ * 不依赖服务器，直接调用 LLM API 实现自主编码循环：
+ * 1. 构建系统提示词 + 上下文 + 对话历史
+ * 2. 调用 LLM 获取回复
+ * 3. 解析工具调用并执行
+ * 4. 将工具结果反馈给 LLM
+ * 5. 重复直到无工具调用或达到最大轮数（15 轮）
+ */
 export async function runLocalAgentLoop(
   client: FileServiceClient,
   config: AgentConfig,
@@ -266,6 +301,7 @@ export async function runLocalAgentLoop(
 ): Promise<string> {
   const { onChunk, onToolStart, onToolEnd } = callbacks;
 
+  // 模拟流式输出：将文本按 40 字符分块发送
   const streamText = (text: string) => {
     for (let i = 0; i < text.length; i += 40) {
       onChunk(text.slice(i, i + 40));
@@ -275,6 +311,7 @@ export async function runLocalAgentLoop(
   const messages: { role: string; content: string }[] = [];
   messages.push({ role: 'system', content: buildAgentSystemPrompt(config) });
 
+  // 注入当前打开的文件
   if (context.openFiles && context.openFiles.length > 0) {
     const parts: string[] = ['## Currently Open Files'];
     for (const f of context.openFiles) {
@@ -283,18 +320,22 @@ export async function runLocalAgentLoop(
     messages.push({ role: 'system', content: parts.join('\n') });
   }
 
+  // 注入项目文件树
   if (context.fileTree && context.fileTree.length > 0) {
     messages.push({ role: 'system', content: '## Project File Tree\n' + context.fileTree.join('\n') });
   }
 
+  // 注入光标位置
   if (context.cursorPosition) {
     messages.push({ role: 'system', content: `Cursor at ${context.cursorPosition.file}:${context.cursorPosition.line}:${context.cursorPosition.column}` });
   }
 
+  // 注入选中的文本
   if (context.selection && context.selection.text) {
     messages.push({ role: 'system', content: `Selected text in ${context.selection.file} (lines ${context.selection.startLine}-${context.selection.endLine}):\n\`\`\`\n${context.selection.text}\n\`\`\`` });
   }
 
+  // 注入对话历史
   for (const m of context.conversationHistory || []) {
     messages.push({ role: m.role, content: m.content });
   }
@@ -307,6 +348,7 @@ export async function runLocalAgentLoop(
 
   let fullContent = '';
 
+  // 工具调用循环：最多 MAX_AGENT_TURNS 轮
   for (let turn = 0; turn < MAX_AGENT_TURNS; turn++) {
     const response = await chatLLM(apiUrl, apiKey, model, messages, config.temperature, config.maxTokens);
 
@@ -315,6 +357,7 @@ export async function runLocalAgentLoop(
     const toolCalls = parseToolCalls(response);
 
     if (toolCalls.length > 0) {
+      // 从回复中去除工具调用标签，保留说明文字
       let textBeforeTools = response;
       for (const tool of toolCalls) {
         const tagRe = new RegExp(`<${tool.type}[^>]*\\/>`, 'g');
@@ -328,6 +371,7 @@ export async function runLocalAgentLoop(
         fullContent += textBeforeTools + '\n';
       }
 
+      // 依次执行每个工具调用
       for (const tool of toolCalls) {
         const label = `🔍 ${tool.type}: ${tool.params.path || tool.params.pattern || ''}`;
         onToolStart(label);
@@ -358,6 +402,7 @@ export async function runLocalAgentLoop(
         onChunk('\n');
         fullContent += '\n';
 
+        // 将工具调用和结果加入对话历史
         messages.push({
           role: 'assistant',
           content: `<${tool.type} ${Object.entries(tool.params).map(([k, v]) => `${k}="${v}"`).join(' ')}/>`,
@@ -365,10 +410,10 @@ export async function runLocalAgentLoop(
         messages.push({ role: 'user', content: `Tool result:\n${result}` });
       }
 
-      continue;
+      continue; // 继续下一轮
     }
 
-    // No tool calls — final response
+    // 无工具调用 → 最终回复
     streamText(response);
     fullContent += response;
     break;

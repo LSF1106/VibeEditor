@@ -17,6 +17,7 @@
 </template>
 
 <script setup lang="ts">
+/** 活动栏项目 */
 export interface ActivityItem {
   id: string;
   label: string;

@@ -90,11 +90,11 @@ const props = defineProps<{ visible: boolean }>();
 const emit = defineEmits<{ close: [] }>();
 
 const settings = useProviderSettings();
-const editingId = ref<string | null>(null);
-const editing = ref(false);
-const fetchingModels = ref(false);
-const availableModels = ref<string[]>([]);
-const fetchError = ref('');
+const editingId = ref<string | null>(null);   // 当前编辑的提供商 ID（null = 新增）
+const editing = ref(false);                     // 是否显示编辑表单
+const fetchingModels = ref(false);             // 是否正在获取模型列表
+const availableModels = ref<string[]>([]);     // 从 API 获取到的模型列表
+const fetchError = ref('');                    // 获取模型列表的错误信息
 
 const form = reactive({
   name: '',
@@ -103,6 +103,7 @@ const form = reactive({
   model: '',
 });
 
+/** 开始编辑已有提供商 */
 function startEdit(provider: ProviderConfig) {
   editingId.value = provider.id;
   editing.value = true;
@@ -114,6 +115,7 @@ function startEdit(provider: ProviderConfig) {
   fetchError.value = '';
 }
 
+/** 开始新增提供商 */
 function startAdd() {
   editingId.value = null;
   editing.value = true;
@@ -125,6 +127,7 @@ function startAdd() {
   fetchError.value = '';
 }
 
+/** 从提供商 API 获取可用模型列表 */
 async function fetchModels() {
   fetchingModels.value = true;
   availableModels.value = [];
@@ -143,6 +146,7 @@ async function fetchModels() {
   }
 }
 
+/** 保存表单（新增或更新） */
 function saveForm() {
   if (!form.name.trim() || !form.apiUrl.trim() || !form.model.trim()) return;
 

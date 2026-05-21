@@ -70,13 +70,13 @@
 import type { WorkspaceMode } from '../../stores/editor';
 
 const props = defineProps<{
-  nodes: any[];
-  workspaceRoot: string;
-  workspaceMode?: WorkspaceMode;
-  loading?: boolean;
-  expandedDirs: Set<string>;
-  loadingDirs: Set<string>;
-  dirChildren: Record<string, any[]>;
+  nodes: any[];                   // 根级节点列表
+  workspaceRoot: string;          // 工作区根路径
+  workspaceMode?: WorkspaceMode;  // 工作区模式标识
+  loading?: boolean;              // 是否正在加载根级目录
+  expandedDirs: Set<string>;      // 已展开的目录路径集合
+  loadingDirs: Set<string>;       // 正在加载子节点的目录集合
+  dirChildren: Record<string, any[]>; // 各目录的子节点缓存
 }>();
 
 const emit = defineEmits<{
@@ -85,6 +85,7 @@ const emit = defineEmits<{
   'delete-file': [path: string];
 }>();
 
+/** 点击节点：目录 → 展开/折叠；文件 → 打开 */
 function handleNodeClick(node: any) {
   if (node.isDirectory) {
     emit('expand-dir', node.path);

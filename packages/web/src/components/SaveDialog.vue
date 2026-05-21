@@ -55,12 +55,13 @@ const emit = defineEmits<{
   cancel: [];
 }>();
 
-const currentDir = ref('.');
+const currentDir = ref('.');     // 当前浏览目录
 const subDirs = ref<{ name: string; path: string }[]>([]);
 const filename = ref(props.defaultName);
 const loading = ref(false);
 const filenameInput = ref<HTMLInputElement>();
 
+/** 当前完整路径的预览 */
 const displayPath = computed(() => {
   const root = props.workspaceRoot || '/';
   return root.replace(/\/$/, '') + '/' + (currentDir.value === '.' ? '' : currentDir.value + '/') + (filename.value || '(filename)');

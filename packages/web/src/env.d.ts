@@ -1,11 +1,14 @@
 /// <reference types="vite/client" />
 
+// Vue 单文件组件类型声明
 declare module '*.vue' {
   import type { DefineComponent } from 'vue';
   const component: DefineComponent<object, object, unknown>;
   export default component;
 }
 
+// Electron 环境下的 IPC API 类型声明
+// Electron 主进程通过 preload 脚本将这些方法挂载到 window.electronAPI
 interface Window {
   electronAPI?: {
     readFile: (path: string) => Promise<string>;
@@ -24,5 +27,6 @@ interface Window {
   };
 }
 
+// 浏览器 File System Access API 类型声明（部分浏览器可能不支持）
 declare function showDirectoryPicker(options?: { mode?: 'read' | 'readwrite' }): Promise<FileSystemDirectoryHandle>;
 declare function showOpenFilePicker(options?: { multiple?: boolean }): Promise<FileSystemFileHandle[]>;

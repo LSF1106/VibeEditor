@@ -1,3 +1,7 @@
+<!--
+  根组件 —— 渲染主布局并定义全局 CSS 变量
+  遵循 VS Code 暗色主题风格
+-->
 <template>
   <MainLayout />
 </template>

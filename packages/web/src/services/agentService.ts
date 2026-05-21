@@ -2,6 +2,7 @@ import type { AgentConfig } from '@vibeeditor/core';
 
 export type { AgentConfig };
 
+/** 对话消息 */
 export interface AgentMessage {
   id: string;
   role: 'user' | 'assistant' | 'system';
@@ -9,12 +10,21 @@ export interface AgentMessage {
   timestamp: number;
 }
 
+/** SSE 流式事件类型 */
 export interface StreamEvent {
   type: 'tool_start' | 'tool_end' | 'tool_result';
   message?: string;
   content?: string;
 }
 
+/**
+ * 创建 Agent API 服务
+ *
+ * 提供两种通信方式：
+ * - sendMessage():  普通请求-响应（POST /api/agent/chat）
+ * - streamMessage(): SSE 流式请求（POST /api/agent/stream）
+ *   解析 data: 行，支持 tool_start / tool_end / tool_result / chunk / done / error 事件
+ */
 export function createAgentService(baseUrl = '') {
   return {
     async sendMessage(message: string, context: Record<string, unknown>, config: AgentConfig): Promise<AgentMessage> {
@@ -56,13 +66,14 @@ export function createAgentService(baseUrl = '') {
       let fullContent = '';
       let buffer = '';
 
+      // 逐块读取 SSE 流，按行解析 data: 前缀的 JSON 事件
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
         const parts = buffer.split('\n');
-        buffer = parts.pop() || '';
+        buffer = parts.pop() || ''; // 保留不完整的最后一行
 
         for (const line of parts) {
           if (!line.startsWith('data: ')) continue;
@@ -84,7 +95,7 @@ export function createAgentService(baseUrl = '') {
               onChunk(data.chunk);
             }
           } catch {
-            // skip malformed SSE lines
+            // 跳过解析失败的 SSE 行
           }
         }
       }

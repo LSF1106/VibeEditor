@@ -140,6 +140,7 @@ import StatusBar from '../StatusBar.vue';
 const store = useEditorStore();
 const fs = reactive(useFileSystem());
 
+// ===== 布局状态 =====
 const showAgent = ref(false);
 const sidebarWidth = ref(260);
 const sidebarCollapsed = ref(false);
@@ -147,6 +148,7 @@ const sidebarSavedWidth = ref(260);
 const agentWidth = ref(350);
 const activeActivity = ref('explorer');
 
+// ===== 活动栏配置 =====
 const activityItems: ActivityItem[] = [
   { id: 'explorer', label: 'Explorer (Ctrl+Shift+E)', icon: '🗋' },
   { id: 'search', label: 'Search (Ctrl+Shift+F)', icon: '🔍' },
@@ -161,6 +163,7 @@ const sidebarSections = ref<SideBarSection[]>([
   { id: 'explorer', label: 'EXPLORER', count: 0 },
 ]);
 
+/** 活动栏切换：点击同一项 → 折叠侧边栏；不同项 → 切换内容 */
 function onActivitySelect(id: string) {
   if (activeActivity.value === id && !sidebarCollapsed.value) {
     toggleSidebar();
@@ -184,19 +187,24 @@ function onActivitySelect(id: string) {
     ];
   }
 }
+
+// ===== 文件树展开/加载状态 =====
 const expandedDirs = ref(new Set<string>());
 const loadingDirs = ref(new Set<string>());
 const dirChildren = ref<Record<string, any[]>>({});
 let isResizingSidebar = false;
 let isResizingAgent = false;
 
+// ===== 另存为对话框状态 =====
 const showSaveDialog = ref(false);
 const saveDialogDefaultName = ref('');
 let saveDialogResolver: ((value: string | null) => void) | null = null;
 
+// ===== Agent 编辑快照（用于撤销） =====
 const editSnapshots = ref<Map<string, string>>(new Map());
 const lastEditedFiles = ref<string[]>([]);
 
+/** 撤销 Agent 最近一次的所有编辑 */
 async function undoLastEdits() {
   if (lastEditedFiles.value.length === 0) return;
 
@@ -220,6 +228,7 @@ async function undoLastEdits() {
   lastEditedFiles.value = [];
 }
 
+/** 切换侧边栏折叠状态 */
 function toggleSidebar() {
   if (sidebarCollapsed.value) {
     sidebarWidth.value = sidebarSavedWidth.value;
@@ -231,6 +240,7 @@ function toggleSidebar() {
   }
 }
 
+/** 注册到 useFileSystem 的"另存为"处理器（返回 Promise 等待用户选择路径） */
 function handleSaveFileAs(): Promise<string | null> {
   return new Promise((resolve) => {
     saveDialogResolver = resolve;
@@ -251,6 +261,7 @@ function onSaveDialogCancel() {
   saveDialogResolver = null;
 }
 
+/** 处理工具栏编辑操作（撤销/重做/查找/替换/剪切/复制/粘贴） */
 function handleEditAction(action: string) {
   const editor = getEditorInstance();
   if (!editor) return;
@@ -303,9 +314,11 @@ function handleEditAction(action: string) {
   }
 }
 
+// 注册回调到 useFileSystem
 fs.setSaveAsHandler(handleSaveFileAs);
 fs.setOnAfterSave(handleAfterSave);
 
+// 文件树节点数量变化时更新侧边栏计数
 watch(() => store.fileTreeNodes.length, (count) => {
   if (activeActivity.value === 'explorer' && sidebarSections.value[0]) {
     sidebarSections.value = [
@@ -314,6 +327,11 @@ watch(() => store.fileTreeNodes.length, (count) => {
   }
 });
 
+/**
+ * 文件保存后的回调：刷新所有已展开目录的内容
+ *
+ * 并行重载根目录和所有已展开的子目录，保持文件树 UI 与磁盘同步。
+ */
 async function handleAfterSave(_savePath: string) {
   const dirsToReload = ['.', ...expandedDirs.value];
   const results = await Promise.all(
@@ -340,22 +358,30 @@ async function handleAfterSave(_savePath: string) {
   loadingDirs.value = new Set();
 }
 
+/** 清空所有文件树展开/缓存状态 */
 function clearDirState() {
   expandedDirs.value = new Set();
   loadingDirs.value = new Set();
   dirChildren.value = {};
 }
 
+/** 打开文件夹并重置文件树状态 */
 async function handleOpenFolder() {
   clearDirState();
   await fs.openFolderDialog();
 }
 
+/** 连接到服务端并重置文件树状态 */
 async function handleConnectServer() {
   clearDirState();
   await fs.connectToServer();
 }
 
+/**
+ * 展开/折叠目录（懒加载）
+ *
+ * 首次展开时异步加载子节点，已加载的直接切换折叠状态。
+ */
 async function handleExpandDir(dirPath: string) {
   const s = new Set(expandedDirs.value);
   if (s.has(dirPath)) {
@@ -370,11 +396,11 @@ async function handleExpandDir(dirPath: string) {
   try {
     const entries = await fs.client.readDir(dirPath);
     dirChildren.value = { ...dirChildren.value, [dirPath]: entries };
-  } catch { /* ignore */ }
+  } catch { /* 忽略读取失败 */ }
   loadingDirs.value = new Set([...loadingDirs.value].filter(d => d !== dirPath));
 }
 
-// 侧边栏（文件树）宽度拖拽
+/** 侧边栏（文件树）宽度拖拽 */
 function startSidebarResize(e: MouseEvent) {
   isResizingSidebar = true;
   const startX = e.clientX;
@@ -395,7 +421,7 @@ function startSidebarResize(e: MouseEvent) {
   document.addEventListener('mouseup', onUp);
 }
 
-// Agent 面板宽度拖拽
+/** Agent 面板宽度拖拽（向左拖拽拉宽面板） */
 function startAgentResize(e: MouseEvent) {
   isResizingAgent = true;
   const startX = e.clientX;
@@ -416,7 +442,16 @@ function startAgentResize(e: MouseEvent) {
   document.addEventListener('mouseup', onUp);
 }
 
-// 处理 Agent 生成的编辑操作：写入文件并更新已打开的编辑器标签页
+/**
+ * 应用 Agent 生成的编辑操作
+ *
+ * 对每个编辑：
+ * 1. 解析文件路径（LLM 生成相对路径，需拼接 workspaceRoot）
+ * 2. 备份原内容（供撤销使用）
+ * 3. 写入新内容
+ * 4. 更新已打开的标签页或自动打开新标签
+ * 5. 刷新文件树
+ */
 async function handleApplyEdits(edits: ParsedEdit[]) {
   editSnapshots.value.clear();
   lastEditedFiles.value = [];
@@ -433,11 +468,12 @@ async function handleApplyEdits(edits: ParsedEdit[]) {
           ? root.replace(/[\/\\]?$/, '/') + edit.path
           : edit.path;
 
+      // 备份原始内容
       try {
         const original = await fs.client.readFile(resolvedPath);
         editSnapshots.value.set(resolvedPath, original);
       } catch {
-        // new file, no backup needed
+        // 新文件，无需备份
       }
       lastEditedFiles.value.push(resolvedPath);
 

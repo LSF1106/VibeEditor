@@ -1,5 +1,11 @@
 import type { FileEntry } from '@vibeeditor/core';
 
+/**
+ * 文件服务客户端接口 —— 对 @vibeeditor/core 的 IFileSystem 的扩展
+ *
+ * 增加了 openFolder / openFile / saveFileAs 等 UI 交互方法。
+ * 三种实现分别对应 Electron IPC、Server REST API、Browser File System Access API。
+ */
 export interface FileServiceClient {
   readFile(path: string): Promise<string>;
   writeFile(path: string, content: string): Promise<void>;
@@ -15,10 +21,19 @@ export interface FileServiceClient {
   saveFileAs?(path: string, content: string): Promise<string | null>;
 }
 
+/** 运行时环境类型 */
 export type RuntimeEnv = 'electron' | 'server' | 'browser';
 
 let cachedEnv: RuntimeEnv | null = null;
 
+/**
+ * 检测运行时环境（结果缓存）
+ *
+ * 检测顺序：electron → browser → server
+ * - electron: window.electronAPI 存在
+ * - browser:  showDirectoryPicker 存在（File System Access API）
+ * - server:   以上均无（回退到 HTTP REST）
+ */
 export function detectEnvironment(): RuntimeEnv {
   if (cachedEnv) return cachedEnv;
   if (typeof window !== 'undefined' && window.electronAPI) {
@@ -31,6 +46,7 @@ export function detectEnvironment(): RuntimeEnv {
   return cachedEnv;
 }
 
+/** 创建 Electron IPC 客户端 —— 通过 window.electronAPI 桥接主进程文件操作 */
 export function createElectronClient(): FileServiceClient {
   const api = window.electronAPI!;
   return {
@@ -49,6 +65,7 @@ export function createElectronClient(): FileServiceClient {
   };
 }
 
+/** 创建 Server HTTP 客户端 —— 通过 fetch 调用 REST API */
 export function createServerClient(baseUrl = ''): FileServiceClient {
   async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
     const res = await fetch(`${baseUrl}${endpoint}`, {
@@ -110,6 +127,12 @@ export function createServerClient(baseUrl = ''): FileServiceClient {
   };
 }
 
+/**
+ * 通过 FileSystemDirectoryHandle 按相对路径解析到目标 handle
+ *
+ * 逐级调用 getDirectoryHandle / getFileHandle 查找。
+ * 返回 null 表示路径不存在。
+ */
 async function resolvePathFromHandle(
   rootHandle: FileSystemDirectoryHandle,
   relativePath: string
@@ -138,6 +161,11 @@ async function resolvePathFromHandle(
   }
 }
 
+/**
+ * 解析到目标路径的父目录 handle 和名称
+ *
+ * 用于 writeFile / deleteFile 等需要先定位父目录再操作目标文件的场景。
+ */
 async function resolveParentHandle(
   rootHandle: FileSystemDirectoryHandle,
   relativePath: string
@@ -156,11 +184,18 @@ async function resolveParentHandle(
   return { parent, name: parts[parts.length - 1] };
 }
 
+/** 目录缓存条目 */
 interface DirCacheEntry {
   entries: FileEntry[];
   timestamp: number;
 }
 
+/**
+ * 创建浏览器本地文件系统客户端
+ *
+ * 基于 File System Access API（showDirectoryPicker）实现。
+ * 包含 2 秒 TTL 的目录缓存，减少频繁 readDir 调用。
+ */
 export function createBrowserLocalClient(rootHandle: FileSystemDirectoryHandle): FileServiceClient {
   const rootName = rootHandle.name;
   const dirCache = new Map<string, DirCacheEntry>();
@@ -195,6 +230,7 @@ export function createBrowserLocalClient(rootHandle: FileSystemDirectoryHandle):
       const writable = await handle.createWritable();
       await writable.write(content);
       await writable.close();
+      // 写入后清除父目录缓存
       dirCache.delete(cacheKey(normPath(filePath).replace(/\/[^/]+$/, '')));
     },
 
@@ -208,6 +244,7 @@ export function createBrowserLocalClient(rootHandle: FileSystemDirectoryHandle):
     readDir: async (dirPath: string) => {
       const key = cacheKey(dirPath);
       const cached = dirCache.get(key);
+      // 缓存命中且未过期，直接返回
       if (cached && Date.now() - cached.timestamp < CACHE_TTL) return cached.entries;
 
       let dirHandle: FileSystemDirectoryHandle;
@@ -234,11 +271,12 @@ export function createBrowserLocalClient(rootHandle: FileSystemDirectoryHandle):
             const file = await (entry as FileSystemFileHandle).getFile();
             fileEntry.size = file.size;
             fileEntry.modifiedAt = file.lastModified;
-          } catch { /* ignore */ }
+          } catch { /* 忽略获取文件元数据失败 */ }
         }
         entries.push(fileEntry);
       }
 
+      // 目录优先，同类型按名称字母序排列
       entries.sort((a, b) => {
         if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
         return a.name.localeCompare(b.name);
@@ -291,6 +329,7 @@ export function createBrowserLocalClient(rootHandle: FileSystemDirectoryHandle):
     },
 
     rename: async (oldPath: string, newPath: string) => {
+      // 读取源文件内容
       const content = await (async () => {
         const handle = await resolvePathFromHandle(rootHandle, normPath(oldPath));
         if (!handle) throw new Error(`Source not found: ${oldPath}`);
@@ -306,6 +345,7 @@ export function createBrowserLocalClient(rootHandle: FileSystemDirectoryHandle):
       const isDir = (await resolvePathFromHandle(rootHandle, normPath(oldPath)))?.kind === 'directory';
 
       if (isDir) {
+        // 目录重命名：先收集子条目，删除旧目录，在新位置重建
         const newResolved = await resolveParentHandle(rootHandle, normPath(newPath));
         if (!newResolved) throw new Error(`Invalid target: ${newPath}`);
 
@@ -319,6 +359,7 @@ export function createBrowserLocalClient(rootHandle: FileSystemDirectoryHandle):
         dirCache.delete(cacheKey(oldPath));
         dirCache.delete(cacheKey(newPath));
       } else if (content !== undefined) {
+        // 文件重命名：删除旧文件，在新位置创建并写入内容
         await oldResolved.parent.removeEntry(oldResolved.name);
         const newResolved = await resolveParentHandle(rootHandle, normPath(newPath));
         if (!newResolved) throw new Error(`Invalid target: ${newPath}`);
@@ -336,6 +377,7 @@ export function createBrowserLocalClient(rootHandle: FileSystemDirectoryHandle):
   };
 }
 
+/** 根据当前环境自动创建对应的 FileServiceClient */
 export function createFileServiceClient(): FileServiceClient {
   const env = detectEnvironment();
   if (env === 'electron') return createElectronClient();
@@ -347,6 +389,7 @@ export function createBrowserLocalServiceClient(): FileServiceClient | null {
   return null;
 }
 
+/** 打开浏览器原生文件夹选择器，返回对应的 FileServiceClient */
 export async function pickLocalFolder(): Promise<FileServiceClient | null> {
   try {
     const dirHandle = await showDirectoryPicker({ mode: 'readwrite' });
@@ -356,6 +399,7 @@ export async function pickLocalFolder(): Promise<FileServiceClient | null> {
   }
 }
 
+/** 打开浏览器原生文件选择器，返回文件路径和内容 */
 export async function pickLocalFile(): Promise<{ path: string; content: string } | null> {
   try {
     const [fileHandle] = await showOpenFilePicker({ multiple: false });

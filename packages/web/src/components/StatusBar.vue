@@ -34,6 +34,7 @@ const props = defineProps<{
 const lineCol = ref<{ line: number; column: number } | null>(null);
 let cursorDisposable: { dispose(): void } | null = null;
 
+/** 从编辑器单例获取当前光标位置 */
 function updateCursorPosition() {
   const editor = getEditorInstance();
   if (!editor) {
@@ -46,6 +47,7 @@ function updateCursorPosition() {
   }
 }
 
+/** 建立光标位置变化监听 */
 function setupCursorListener() {
   cursorDisposable?.dispose();
   cursorDisposable = null;
@@ -60,6 +62,7 @@ function setupCursorListener() {
   }
 }
 
+// 活动标签切换时重新绑定监听（新标签 = 新 Monaco 模型 = 新编辑器实例）
 watch(() => props.activeTab?.id, async () => {
   await nextTick();
   setupCursorListener();
