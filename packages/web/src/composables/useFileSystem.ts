@@ -1,5 +1,6 @@
 import { ref, onMounted, onUnmounted } from 'vue';
 import {
+  createBrowserLocalClient,
   createFileServiceClient,
   createServerClient,
   pickLocalFolder,
@@ -9,6 +10,34 @@ import {
 } from '../services/fileService';
 import { getEditorInstance } from '../services/editorInstance';
 import { useEditorStore } from '../stores/editor';
+
+type DroppedFile = File & { path?: string };
+type DroppedDirectoryItem = DataTransferItem & {
+  getAsFileSystemHandle?: () => Promise<FileSystemHandle | null>;
+  webkitGetAsEntry?: () => { isDirectory: boolean } | null;
+};
+
+// Electron adds the real filesystem path to dropped File objects.
+function getDroppedFilePaths(dataTransfer: DataTransfer): string[] {
+  return Array.from(dataTransfer.files)
+    .map(file => (file as DroppedFile).path)
+    .filter((path): path is string => Boolean(path));
+}
+
+// Browser drops can expose a directory handle instead of a native path.
+async function getDroppedDirectoryHandle(dataTransfer: DataTransfer): Promise<FileSystemDirectoryHandle | null> {
+  for (const item of Array.from(dataTransfer.items)) {
+    if (item.kind !== 'file') continue;
+
+    const droppedItem = item as DroppedDirectoryItem;
+    if (droppedItem.getAsFileSystemHandle) {
+      const handle = await droppedItem.getAsFileSystemHandle();
+      if (handle?.kind === 'directory') return handle as FileSystemDirectoryHandle;
+    }
+  }
+
+  return null;
+}
 
 /**
  * 文件系统交互 composable
@@ -204,7 +233,7 @@ export function useFileSystem() {
         localClient.value = client;
         activeClient.value = client;
         store.workspaceMode = 'local';
-        store.workspaceRoot = (client as any).rootName || 'Local Folder';
+        store.workspaceRoot = client.rootName || 'Local Folder';
         await loadDirectory('.');
       }
     } catch (e: any) {
@@ -243,6 +272,7 @@ export function useFileSystem() {
       const client = getClient();
       const root = await client.openFolder();
       if (root) {
+        store.workspaceMode = 'local';
         store.workspaceRoot = root;
         await loadDirectory('.');
       }
@@ -250,6 +280,66 @@ export function useFileSystem() {
       await openLocalFolder();
     } else {
       await connectToServer();
+    }
+  }
+
+  async function openDroppedFolder(dataTransfer: DataTransfer | null): Promise<boolean> {
+    error.value = null;
+    if (!dataTransfer) return false;
+
+    try {
+      const client = getClient();
+
+      // In Electron, validate and open the dropped native path in the main process.
+      if (env === 'electron' && client.openFolderPath) {
+        const droppedPaths = getDroppedFilePaths(dataTransfer);
+        let lastError: string | null = null;
+
+        for (const droppedPath of droppedPaths) {
+          try {
+            const root = await client.openFolderPath(droppedPath);
+            if (root) {
+              store.workspaceMode = 'local';
+              store.workspaceRoot = root;
+              await loadDirectory('.');
+              return true;
+            }
+          } catch (e: any) {
+            lastError = e.message;
+          }
+        }
+
+        if (droppedPaths.length > 0) {
+          error.value = lastError || 'Drop a folder to open it.';
+          return false;
+        }
+      }
+
+      // In supporting browsers, reuse the existing local File System Access client.
+      const dirHandle = await getDroppedDirectoryHandle(dataTransfer);
+      if (dirHandle) {
+        const droppedClient = createBrowserLocalClient(dirHandle);
+        localClient.value = droppedClient;
+        activeClient.value = droppedClient;
+        store.workspaceMode = 'local';
+        store.workspaceRoot = droppedClient.rootName || 'Local Folder';
+        await loadDirectory('.');
+        return true;
+      }
+
+      // Some browsers can identify a directory drop but cannot hand out a usable handle.
+      const hasDirectoryHint = Array.from(dataTransfer.items).some((item) => {
+        const entry = (item as DroppedDirectoryItem).webkitGetAsEntry?.();
+        return entry?.isDirectory;
+      });
+
+      error.value = hasDirectoryHint
+        ? 'This browser cannot open dropped folders. Use Open Folder instead.'
+        : 'Drop a folder to open it.';
+      return false;
+    } catch (e: any) {
+      error.value = e.message;
+      return false;
     }
   }
 
@@ -434,6 +524,7 @@ export function useFileSystem() {
     openAndReadFile,
     saveCurrentFile,
     openFolderDialog,
+    openDroppedFolder,
     openFileDialog,
     openLocalFolder,
     openLocalFile,

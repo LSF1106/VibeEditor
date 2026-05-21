@@ -20,6 +20,7 @@ interface Window {
     deleteFile: (path: string) => Promise<void>;
     deleteDir: (path: string, recursive?: boolean) => Promise<void>;
     rename: (oldPath: string, newPath: string) => Promise<void>;
+    openFolderPath: (path: string) => Promise<string | null>;
     openFolder: () => Promise<string | null>;
     openFile: () => Promise<{ path: string; content: string } | null>;
     saveFile: (path: string, content: string) => Promise<string | null>;

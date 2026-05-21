@@ -7,6 +7,7 @@ import type { FileEntry } from '@vibeeditor/core';
  * 三种实现分别对应 Electron IPC、Server REST API、Browser File System Access API。
  */
 export interface FileServiceClient {
+  rootName?: string;
   readFile(path: string): Promise<string>;
   writeFile(path: string, content: string): Promise<void>;
   deleteFile(path: string): Promise<void>;
@@ -16,6 +17,7 @@ export interface FileServiceClient {
   exists(path: string): Promise<boolean>;
   stat(path: string): Promise<FileEntry>;
   rename(oldPath: string, newPath: string): Promise<void>;
+  openFolderPath?(path: string): Promise<string | null>;
   openFolder(): Promise<string | null>;
   openFile(): Promise<{ path: string; content: string } | null>;
   saveFileAs?(path: string, content: string): Promise<string | null>;
@@ -59,6 +61,7 @@ export function createElectronClient(): FileServiceClient {
     exists: (path) => api.exists(path),
     stat: (path) => api.stat(path) as Promise<FileEntry>,
     rename: (oldPath, newPath) => api.rename(oldPath, newPath),
+    openFolderPath: (path) => api.openFolderPath(path),
     openFolder: () => api.openFolder(),
     openFile: () => api.openFile(),
     saveFileAs: (path, content) => api.saveFile(path, content),
@@ -216,6 +219,7 @@ export function createBrowserLocalClient(rootHandle: FileSystemDirectoryHandle):
   }
 
   return {
+    rootName,
     readFile: async (filePath: string) => {
       const handle = await resolvePathFromHandle(rootHandle, normPath(filePath));
       if (!handle || handle.kind !== 'file') throw new Error(`File not found: ${filePath}`);

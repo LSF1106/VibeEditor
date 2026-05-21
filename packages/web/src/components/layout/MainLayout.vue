@@ -1,5 +1,12 @@
 <template>
-  <div class="main-layout">
+  <div
+    class="main-layout"
+    :class="{ 'drag-over': isDraggingFolder }"
+    @dragenter="handleDragEnter"
+    @dragover="handleDragOver"
+    @dragleave="handleDragLeave"
+    @drop="handleDrop"
+  >
     <Toolbar
       :env="fs.env"
       :workspace-mode="store.workspaceMode"
@@ -27,25 +34,39 @@
         @select="onActivitySelect"
       />
       <div v-if="!sidebarCollapsed" class="sidebar" :style="{ width: sidebarWidth + 'px' }">
-        <SideBar
-          :title="activeActivityTitle"
-          :sections="sidebarSections"
-        >
-          <template v-slot:explorer>
-            <FileTree
-              :nodes="store.fileTreeNodes"
-              :workspace-root="store.workspaceRoot"
-              :workspace-mode="store.workspaceMode"
-              :loading="fs.isLoading"
-              :expanded-dirs="expandedDirs"
-              :loading-dirs="loadingDirs"
-              :dir-children="dirChildren"
-              @select-file="fs.openAndReadFile"
-              @expand-dir="handleExpandDir"
-              @delete-file="fs.deleteFile"
-            />
-          </template>
-        </SideBar>
+        <template v-if="activeActivity === 'explorer'">
+          <SideBar
+            :title="activeActivityTitle"
+            :sections="sidebarSections"
+          >
+            <template v-slot:explorer>
+              <FileTree
+                :nodes="store.fileTreeNodes"
+                :workspace-root="store.workspaceRoot"
+                :workspace-mode="store.workspaceMode"
+                :loading="fs.isLoading"
+                :expanded-dirs="expandedDirs"
+                :loading-dirs="loadingDirs"
+                :dir-children="dirChildren"
+                @select-file="fs.openAndReadFile"
+                @expand-dir="handleExpandDir"
+                @delete-file="fs.deleteFile"
+              />
+            </template>
+          </SideBar>
+        </template>
+        <template v-else-if="activeActivity === 'search'">
+          <SearchPanel
+            :client="fs.client"
+            @open-file="fs.openAndReadFile"
+          />
+        </template>
+        <template v-else>
+          <SideBar
+            :title="activeActivityTitle"
+            :sections="sidebarSections"
+          />
+        </template>
       </div>
       <div v-if="!sidebarCollapsed" class="resize-handle" @mousedown="startSidebarResize"></div>
       <div class="editor-area">
@@ -112,6 +133,12 @@
       @confirm="onSaveDialogConfirm"
       @cancel="onSaveDialogCancel"
     />
+    <div v-if="isDraggingFolder" class="drop-overlay">
+      <div class="drop-message">
+        <span class="drop-title">Drop folder to open</span>
+        <span class="drop-subtitle">Release anywhere in VibeEditor</span>
+      </div>
+    </div>
     <div v-if="fs.showUndoNotification" class="undo-notification">
       <span class="undo-text">Deleted {{ fs.lastDeleted?.path }}</span>
       <button class="undo-btn" @click="fs.undoDelete()">Undo</button>
@@ -132,6 +159,7 @@ import type { ActivityItem } from './ActivityBar.vue';
 import SideBar from './SideBar.vue';
 import type { SideBarSection } from './SideBar.vue';
 import FileTree from '../file-tree/FileTree.vue';
+import SearchPanel from '../SearchPanel.vue';
 import MonacoEditor from '../editor/MonacoEditor.vue';
 import AgentPanel from '../agent/AgentPanel.vue';
 import SaveDialog from '../SaveDialog.vue';
@@ -147,6 +175,9 @@ const sidebarCollapsed = ref(false);
 const sidebarSavedWidth = ref(260);
 const agentWidth = ref(350);
 const activeActivity = ref('explorer');
+const isDraggingFolder = ref(false);
+// Drag events fire as the cursor moves across child elements, so count depth.
+let dragDepth = 0;
 
 // ===== 活动栏配置 =====
 const activityItems: ActivityItem[] = [
@@ -180,6 +211,10 @@ function onActivitySelect(id: string) {
   if (id === 'explorer') {
     sidebarSections.value = [
       { id: 'explorer', label: 'EXPLORER', count: store.fileTreeNodes.length },
+    ];
+  } else if (id === 'search') {
+    sidebarSections.value = [
+      { id: 'search', label: 'SEARCH', count: undefined },
     ];
   } else {
     sidebarSections.value = [
@@ -377,6 +412,56 @@ async function handleConnectServer() {
   await fs.connectToServer();
 }
 
+function isFileDrag(dataTransfer: DataTransfer | null): boolean {
+  return Boolean(dataTransfer && Array.from(dataTransfer.types).includes('Files'));
+}
+
+function resetDragState() {
+  dragDepth = 0;
+  isDraggingFolder.value = false;
+}
+
+function handleDragEnter(e: DragEvent) {
+  if (!isFileDrag(e.dataTransfer)) return;
+  e.preventDefault();
+  dragDepth += 1;
+  isDraggingFolder.value = true;
+  if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+}
+
+function handleDragOver(e: DragEvent) {
+  if (!isFileDrag(e.dataTransfer)) return;
+  e.preventDefault();
+  isDraggingFolder.value = true;
+  if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+}
+
+function handleDragLeave(e: DragEvent) {
+  if (!isDraggingFolder.value) return;
+  e.preventDefault();
+  dragDepth = Math.max(0, dragDepth - 1);
+  if (dragDepth === 0) isDraggingFolder.value = false;
+}
+
+async function handleDrop(e: DragEvent) {
+  if (!isFileDrag(e.dataTransfer)) return;
+  e.preventDefault();
+  const dataTransfer = e.dataTransfer;
+  resetDragState();
+
+  const opened = await fs.openDroppedFolder(dataTransfer);
+  if (!opened) return;
+
+  // A successful drop replaces the workspace, so reset tree expansion state.
+  clearDirState();
+  activeActivity.value = 'explorer';
+  activeActivityTitle.value = 'EXPLORER';
+  sidebarSections.value = [
+    { id: 'explorer', label: 'EXPLORER', count: store.fileTreeNodes.length },
+  ];
+  if (sidebarCollapsed.value) toggleSidebar();
+}
+
 /**
  * 展开/折叠目录（懒加载）
  *
@@ -510,6 +595,9 @@ async function handleApplyEdits(edits: ParsedEdit[]) {
   height: 100vh;
   background: var(--bg-primary);
 }
+.main-layout.drag-over {
+  position: relative;
+}
 .main-content {
   display: flex;
   flex: 1;
@@ -613,6 +701,37 @@ async function handleApplyEdits(edits: ParsedEdit[]) {
 .placeholder-btn:hover {
   background: var(--bg-hover);
   border-color: var(--accent-color);
+}
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  background: rgba(0, 0, 0, 0.28);
+}
+.drop-message {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-width: 280px;
+  padding: 22px 30px;
+  border: 1px dashed var(--accent-color);
+  border-radius: 8px;
+  background: rgba(30, 30, 30, 0.94);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.38);
+}
+.drop-title {
+  color: var(--text-primary);
+  font-size: 18px;
+  font-weight: 600;
+}
+.drop-subtitle {
+  color: var(--text-secondary);
+  font-size: 13px;
 }
 .agent-resize-handle {
   width: 4px;

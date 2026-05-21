@@ -1,86 +1,88 @@
 <template>
-  <div>
+  <div class="tree-node-wrapper">
     <div
       class="tree-node"
       :style="{ paddingLeft: depth * 16 + 8 + 'px' }"
       @click="handleClick"
     >
-      <span v-if="node.isDirectory" class="node-arrow">{{ expanded ? '▼' : '▶' }}</span>
+      <span v-if="node.isDirectory" class="node-arrow">
+        {{ expanded ? '▼' : '▶' }}
+      </span>
       <span v-else class="node-arrow-placeholder"></span>
       <span class="node-icon">{{ node.isDirectory ? '📁' : '📄' }}</span>
       <span class="node-name" :title="node.path">{{ node.name }}</span>
+      <span v-if="!node.isDirectory" class="node-delete" @click.stop="emit('delete-file', node.path)" title="Delete file">🗑</span>
     </div>
     <template v-if="expanded && node.isDirectory">
-      <div v-if="loadingChildren" class="tree-node" :style="{ paddingLeft: (depth + 1) * 16 + 8 + 'px' }">
+      <div v-if="loadingChild" class="tree-node-loading" :style="{ paddingLeft: (depth + 1) * 16 + 8 + 'px' }">
         <span class="node-loading">Loading...</span>
       </div>
       <TreeNode
-        v-for="child in children"
+        v-for="child in childNodes"
         :key="child.path"
         :node="child"
         :depth="depth + 1"
-        @select="$emit('select', $event)"
-        @expand="$emit('expand', $event)"
+        :expanded-dirs="expandedDirs"
+        :loading-dirs="loadingDirs"
+        :dir-children="dirChildren"
+        @select-file="(p: string) => emit('select-file', p)"
+        @expand-dir="(p: string) => emit('expand-dir', p)"
+        @delete-file="(p: string) => emit('delete-file', p)"
       />
     </template>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed } from 'vue';
+
+interface TreeNode {
+  name: string;
+  path: string;
+  isDirectory: boolean;
+  size?: number;
+  modifiedAt?: number;
+}
 
 const props = defineProps<{
-  node: any;      // 当前节点数据
-  depth: number;  // 嵌套深度（用于计算缩进）
+  node: TreeNode;
+  depth: number;
+  expandedDirs: Set<string>;
+  loadingDirs: Set<string>;
+  dirChildren: Record<string, TreeNode[]>;
 }>();
 
 const emit = defineEmits<{
-  'select': [data: { path: string; name: string }];
-  'expand': [data: { path: string }];
+  'select-file': [path: string];
+  'expand-dir': [path: string];
+  'delete-file': [path: string];
 }>();
 
-const expanded = ref(false);
-const loadingChildren = ref(false);
-const children = ref<any[]>([]);
+const expanded = computed(() => props.expandedDirs.has(props.node.path));
+const loadingChild = computed(() => props.loadingDirs.has(props.node.path));
+const childNodes = computed(() => props.dirChildren[props.node.path] || []);
 
 /** 点击处理：目录节点展开/折叠，文件节点触发选择 */
 function handleClick() {
   if (props.node.isDirectory) {
-    if (!expanded.value) {
-      expanded.value = true;
-      // 优先使用内联 children，否则触发父级异步加载
-      if (props.node.children && props.node.children.length > 0) {
-        children.value = props.node.children;
-      } else {
-        loadingChildren.value = true;
-        emit('expand', { path: props.node.path });
-      }
-    } else {
-      expanded.value = false;
-    }
+    emit('expand-dir', props.node.path);
   } else {
-    emit('select', { path: props.node.path, name: props.node.name });
+    emit('select-file', props.node.path);
   }
 }
-
-/** 供父组件在异步加载完成后设置子节点 */
-function setChildren(newChildren: any[]) {
-  children.value = newChildren;
-  loadingChildren.value = false;
-}
-
-defineExpose({ setChildren });
 </script>
 
 <style scoped>
+.tree-node-wrapper {
+  user-select: none;
+}
 .tree-node {
   display: flex;
   align-items: center;
-  padding: 4px 8px;
+  padding: 3px 8px;
   cursor: pointer;
   font-size: 13px;
   color: var(--text-primary);
-  user-select: none;
 }
 .tree-node:hover {
   background: var(--bg-hover);
@@ -104,10 +106,30 @@ defineExpose({ setChildren });
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex: 1;
+}
+.node-delete {
+  margin-left: auto;
+  font-size: 12px;
+  opacity: 0;
+  visibility: hidden;
+  padding: 0 4px;
+  flex-shrink: 0;
+}
+.tree-node:hover .node-delete {
+  opacity: 1;
+  visibility: visible;
+}
+.node-delete:hover {
+  color: #f44747;
+}
+.tree-node-loading {
+  padding: 3px 8px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-style: italic;
 }
 .node-loading {
   color: var(--text-secondary);
-  font-size: 11px;
-  font-style: italic;
 }
 </style>
