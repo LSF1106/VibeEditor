@@ -63,10 +63,12 @@ function applyOperation(content: string, op: EditOperation): string {
 
   switch (op.type) {
     case 'insert': {
+      // 将文本插入到指定行列位置
+      // 行号、列号均为 1-based，需转为 0-based 索引
       const lineIdx = op.range.startLineNumber - 1;
       const colIdx = Math.min(op.range.startColumn - 1, (lines[lineIdx] || '').length);
       const line = lines[lineIdx] || '';
-      // 在指定列位置将文本插入当前行
+      // 在 colIdx 处插入文本：prefix + text + suffix
       lines[lineIdx] = line.slice(0, colIdx) + (op.text || '') + line.slice(colIdx);
       break;
     }
@@ -75,15 +77,16 @@ function applyOperation(content: string, op: EditOperation): string {
       const endLine = op.range.endLineNumber - 1;
 
       if (startLine === endLine) {
-        // 单行删除：截断该行
+        // 单行删除：截断该行，保留 startColumn 之前和 endColumn 之后的内容
         const line = lines[startLine] || '';
         lines[startLine] = line.slice(0, op.range.startColumn - 1) + line.slice(op.range.endColumn - 1);
       } else {
-        // 多行删除：拼接首行前缀 + 尾行后缀，移除中间所有行
+        // 多行删除：保留首行的前缀 + 尾行的后缀，移除中间所有行
         const firstLine = lines[startLine] || '';
         const lastLine = lines[endLine] || '';
         const prefix = firstLine.slice(0, op.range.startColumn - 1);
         const suffix = lastLine.slice(op.range.endColumn - 1);
+        // splice 将 startLine 到 endLine 的行替换为一行 prefix+suffix
         lines.splice(startLine, endLine - startLine + 1, prefix + suffix);
       }
       break;
@@ -93,17 +96,17 @@ function applyOperation(content: string, op: EditOperation): string {
       const endLine = op.range.endLineNumber - 1;
       const text = (op.text || '').split('\n');
 
-      // 保留替换范围前后的文本
+      // 保留替换范围前后的文本，拼接到新文本的首尾行
       const firstLine = lines[startLine] || '';
       const lastLine = lines[endLine] || '';
       const prefix = firstLine.slice(0, op.range.startColumn - 1);
       const suffix = lastLine.slice(op.range.endColumn - 1);
 
-      // 将新文本的首行拼上前缀，尾行拼上后缀
+      // 新文本首行前拼接 prefix，尾行后拼接 suffix
       text[0] = prefix + text[0];
       text[text.length - 1] = text[text.length - 1] + suffix;
 
-      // 用新文本行替换旧的范围行
+      // 用新文本行数组替换旧的范围行
       lines.splice(startLine, endLine - startLine + 1, ...text);
       break;
     }

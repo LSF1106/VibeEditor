@@ -12,7 +12,7 @@ export interface ProviderConfig {
 const STORAGE_KEY = 'vibeeditor-providers';
 const ACTIVE_KEY = 'vibeeditor-active-provider';
 
-/** 默认内置的提供商配置（OpenAI） */
+/** 默认内置的提供商配置（OpenAI），作为首次使用的兜底 */
 function getDefaultProviders(): ProviderConfig[] {
   return [
     {
@@ -107,8 +107,15 @@ function createProviderSettings() {
 }
 
 // 模块级单例：确保 AgentPanel 和 SettingsDialog 共享同一份响应式状态
+// 使用 createProviderSettings 工厂函数配合 lazy 实例化，避免 Vue 多实例问题
 let instance: ReturnType<typeof createProviderSettings> | null = null;
 
+/**
+ * 获取提供商设置实例（单例）
+ *
+ * 在多组件间共享 providers 列表和 activeId，保证 AgentPanel
+ * 中的提供商选择器和 SettingsDialog 中的编辑表单始终同步。
+ */
 export function useProviderSettings() {
   if (!instance) {
     instance = createProviderSettings();

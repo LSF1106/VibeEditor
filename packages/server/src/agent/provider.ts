@@ -1,11 +1,21 @@
 import type { IAgentProvider, AgentConfig, AgentContext, AgentMessage } from '@vibeeditor/core';
 
+/** LLM 连接配置（内部使用，从 AgentConfig 和环境变量提取） */
 interface LLMConfig {
   apiUrl: string;
   apiKey: string;
   model: string;
 }
 
+/**
+ * 从 AgentConfig 和环境变量提取 LLM 连接参数
+ *
+ * 优先级：config 显式传入 > 环境变量 > 硬编码默认值
+ * 环境变量映射：
+ *   LLM_API_URL  → apiUrl（默认 https://api.openai.com/v1）
+ *   LLM_API_KEY  → apiKey（默认空字符串）
+ *   LLM_MODEL    → model（默认 gpt-4o）
+ */
 function getLLMConfig(config: AgentConfig): LLMConfig {
   return {
     apiUrl: config.apiUrl || process.env.LLM_API_URL || 'https://api.openai.com/v1',
@@ -14,6 +24,20 @@ function getLLMConfig(config: AgentConfig): LLMConfig {
   };
 }
 
+/**
+ * 构建发送给 LLM 的 messages 数组
+ *
+ * 组装顺序：
+ * 1. system prompt（来自 config 或默认值）
+ * 2. 上下文系统消息（打开文件、文件树、光标、选区，一次性注入为 system 消息）
+ * 3. 对话历史（role=user/assistant 交替）
+ * 4. 当前用户消息（role=user）
+ *
+ * @param config  - Agent 运行配置（含 systemPrompt）
+ * @param message - 用户最新输入
+ * @param context - 当前 Agent 上下文（文件树、打开文件、光标、选区、对话历史）
+ * @returns OpenAI 兼容的 messages 数组
+ */
 function buildMessages(config: AgentConfig, message: string, context: AgentContext) {
   const systemPrompt = config.systemPrompt || 'You are an AI code editor assistant.';
   const messages: { role: string; content: string }[] = [
@@ -45,15 +69,33 @@ function buildMessages(config: AgentConfig, message: string, context: AgentConte
     messages.push({ role: m.role, content: m.content });
   }
 
+  // 上下文信息作为一条单独的 system 消息注入
   if (contextParts.length > 0) {
     messages.push({ role: 'system', content: contextParts.join('\n') });
   }
 
+  // 用户最新输入
   messages.push({ role: 'user', content: message });
 
   return messages;
 }
 
+/**
+ * OpenAI 兼容提供者实现
+ *
+ * 使用原生 fetch 调用 OpenAI 兼容 API（支持 OpenAI、Ollama、vLLM 等）。
+ * 不依赖任何第三方 LLM SDK，仅需 HTTP fetch。
+ *
+ * 特性：
+ * - chat():       非流式调用，返回完整回复文本
+ * - chatStream(): 流式 SSE 调用，逐 token 回调 onChunk
+ * - 支持通过环境变量配置默认值（LLM_API_URL / LLM_API_KEY / LLM_MODEL）
+ *
+ * @example
+ * const p = new OpenAILikeProvider();
+ * await p.initialize({ mode: 'build', apiUrl: 'http://localhost:11434/v1' });
+ * const reply = await p.sendMessage('帮我实现一个登录页面', context);
+ */
 export class OpenAILikeProvider implements IAgentProvider {
   readonly name = 'openai-compatible';
   readonly displayName = 'OpenAI Compatible';
@@ -65,11 +107,21 @@ export class OpenAILikeProvider implements IAgentProvider {
     this.agentConfig = config;
   }
 
+  /** 检查是否已初始化，返回配置对象，未初始化则抛出异常 */
   private getConfig(): { llm: LLMConfig; agent: AgentConfig } {
     if (!this.llmConfig) throw new Error('Provider not initialized');
     return { llm: this.llmConfig, agent: this.agentConfig || { mode: 'plan' } };
   }
 
+  /**
+   * 非流式 LLM 调用
+   *
+   * 发送 POST 请求到 {apiUrl}/chat/completions，返回 LLM 的完整回复文本。
+   * 请求体包含 model、messages、temperature、max_tokens。
+   *
+   * @param messages - OpenAI 格式的对话 messages 数组
+   * @returns LLM 生成的回复文本（choices[0].message.content）
+   */
   async chat(messages: { role: string; content: string }[]): Promise<string> {
     const { llm, agent } = this.getConfig();
 
@@ -96,6 +148,17 @@ export class OpenAILikeProvider implements IAgentProvider {
     return data.choices?.[0]?.message?.content || '';
   }
 
+  /**
+   * 流式 LLM 调用（SSE）
+   *
+   * 发送 stream: true 的 POST 请求，逐行解析 SSE 响应流。
+   * 每收到一个 data: 行，提取 choices[0].delta.content 并通过 onChunk 回调通知。
+   * SSE 行格式：data: {"choices":[{"delta":{"content":"token"}}]}
+   *
+   * @param messages - OpenAI 格式的对话 messages 数组
+   * @param onChunk  - 每收到一个 token 增量时调用
+   * @returns LLM 生成的完整回复文本
+   */
   async chatStream(
     messages: { role: string; content: string }[],
     onChunk: (chunk: string) => void
@@ -113,7 +176,7 @@ export class OpenAILikeProvider implements IAgentProvider {
         messages,
         temperature: agent.temperature ?? 0.3,
         max_tokens: agent.maxTokens ?? 4096,
-        stream: true,
+        stream: true, // 标记为流式请求
       }),
     });
 
@@ -127,21 +190,23 @@ export class OpenAILikeProvider implements IAgentProvider {
     if (!reader) throw new Error('Stream not available');
 
     const decoder = new TextDecoder();
-    let buffer = '';
+    let buffer = ''; // 拼接不完整的 SSE 行
 
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
 
+      // 解码新收到的数据并追加到缓冲区
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
+      buffer = lines.pop() || ''; // 最后一行可能不完整，留到下次处理
 
       for (const line of lines) {
         const trimmed = line.trim();
+        // SSE 协议：空行或非 data: 行跳过
         if (!trimmed || !trimmed.startsWith('data: ')) continue;
         const dataStr = trimmed.slice(6);
-        if (dataStr === '[DONE]') continue;
+        if (dataStr === '[DONE]') continue; // 流结束标记
 
         try {
           const json = JSON.parse(dataStr);
@@ -151,7 +216,7 @@ export class OpenAILikeProvider implements IAgentProvider {
             onChunk(delta);
           }
         } catch {
-          // skip unparseable SSE lines
+          // 跳过无法解析的 SSE 行（通常是空行或格式异常）
         }
       }
     }
@@ -159,6 +224,11 @@ export class OpenAILikeProvider implements IAgentProvider {
     return fullContent;
   }
 
+  /**
+   * 非流式发送消息（实现 IAgentProvider）
+   *
+   * 构建 messages → 调用 chat() → 返回 AgentMessage
+   */
   async sendMessage(message: string, context: AgentContext): Promise<AgentMessage> {
     const { agent } = this.getConfig();
     const messages = buildMessages(agent, message, context);
@@ -172,6 +242,12 @@ export class OpenAILikeProvider implements IAgentProvider {
     };
   }
 
+  /**
+   * 流式发送消息（实现 IAgentProvider）
+   *
+   * 构建 messages → 调用 chatStream() → 返回 AgentMessage
+   * 每个 token 增量通过 onChunk 回调实时推送
+   */
   async streamMessage(
     message: string,
     context: AgentContext,
@@ -189,6 +265,7 @@ export class OpenAILikeProvider implements IAgentProvider {
     };
   }
 
+  /** 释放资源，清空内部配置 */
   dispose(): void {
     this.llmConfig = null;
     this.agentConfig = null;

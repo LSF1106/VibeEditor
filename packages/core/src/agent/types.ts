@@ -1,6 +1,10 @@
 import { EditOperation } from '../editor/types';
 
-/** Agent 工作模式：build（编码）| plan（规划） */
+/**
+ * Agent 工作模式
+ * - build: 编码模式，LLM 使用多轮工具调用（循环），可读写文件
+ * - plan:  规划模式，LLM 单轮回复，仅做分析/建议，不修改文件
+ */
 export type AgentMode = 'build' | 'plan';
 
 /** 对话消息 */
@@ -60,14 +64,38 @@ export interface AgentContext {
  *
  * 用于接入不同的 AI 后端（Anthropic、OpenAI、Ollama 等）。
  * 实现类需提供 initialize、sendMessage 和可选的 streamMessage。
+ *
+ * @description
+ * - name/displayName: 提供商标识和显示名
+ * - initialize: 初始化 LLM 连接配置（apiUrl、apiKey、model 等）
+ * - sendMessage: 非流式对话，发送用户消息 + 上下文，返回完整回复
+ * - streamMessage: 流式对话（可选），通过 onChunk 回调逐块推送 token
+ * - dispose: 清理资源（如关闭连接）
+ *
+ * @example
+ * // server 端使用 OpenAILikeProvider
+ * const provider = new OpenAILikeProvider();
+ * await provider.initialize({ mode: 'build', apiUrl: 'https://api.openai.com/v1' });
+ * const reply = await provider.sendMessage('添加一个登录组件', context);
+ *
+ * // 流式
+ * await provider.streamMessage!('添加一个登录组件', context, (chunk) => {
+ *   console.log(chunk);
+ * });
  */
 export interface IAgentProvider {
   readonly name: string;
   readonly displayName: string;
 
+  /** 初始化提供者配置（API 地址、密钥、模型等） */
   initialize(config: AgentConfig): Promise<void>;
+
+  /** 非流式发送消息，返回 LLM 生成的完整回复 */
   sendMessage(message: string, context: AgentContext): Promise<AgentMessage>;
-  /** 流式消息（可选实现），通过 onChunk 回调逐块推送 */
+
+  /** 流式消息（可选实现），通过 onChunk 回调逐块推送 token 增量 */
   streamMessage?(message: string, context: AgentContext, onChunk: (chunk: string) => void): Promise<AgentMessage>;
+
+  /** 释放提供者占用的资源 */
   dispose(): void;
 }

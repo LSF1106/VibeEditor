@@ -18,7 +18,7 @@ export interface ChatMessage {
   editOperations?: ParsedEdit[];
 }
 
-/** 从文件树节点中收集所有文件路径 */
+/** 从文件树节点中收集所有非目录文件的路径（扁平化为路径字符串数组） */
 function collectFileTreePaths(entries: any[], basePath: string): string[] {
   const paths: string[] = [];
   for (const entry of entries) {
@@ -33,10 +33,12 @@ function collectFileTreePaths(entries: any[], basePath: string): string[] {
  * 构建 Agent 上下文
  *
  * 从编辑器 store 和 Monaco 实例收集：
- * - 已打开的文件（路径 + 内容）
- * - 项目文件树
- * - 光标位置
- * - 选中的文本
+ * - openFiles:     所有已打开 Tab 的路径 + 完整内容
+ * - fileTree:      项目文件树的扁平路径列表（不含目录）
+ * - cursorPosition: 当前光标位置（file:line:column），从 Monaco editor.getPosition() 获取
+ * - selection:      当前文本选区（file + text + 起止行号），从 editor.getSelection() 获取
+ *
+ * @param activeFilePath - 当前活动文件的路径，作为光标和选区所属的文件
  */
 function buildAgentContext(activeFilePath?: string): AgentContext {
   const store = useEditorStore();
@@ -148,8 +150,15 @@ export function useAgent() {
   /**
    * 流式发送消息
    *
-   * local 模式：调用 runLocalAgentLoop（直接调 LLM API + 工具循环）
-   * server 模式：调用 agentService.streamMessage（HTTP SSE 流式）
+   * 根据 workspaceMode 分发到不同的实现：
+   * - 'local' + localClient 存在 → runLocalAgentLoop（浏览器端直接调 LLM + 工具循环）
+   * - 其他 → agentService.streamMessage（HTTP SSE 到 server 端）
+   *
+   * 流式过程中：
+   * - 创建一个空的 assistant 消息占位，内容逐步填充
+   * - onChunk 回调将每个 token 增量追加到占位消息的 content
+   * - onToolStart/onToolEnd 更新 toolStatus 提示
+   * - 流式完成后调用 extractEdits 解析 <edit> 块
    */
   async function streamMessage(
     content: string,
@@ -186,7 +195,7 @@ export function useAgent() {
       const history = messages.value.slice(0, -1).filter(m => m.id !== assistantMsgId);
 
       if (store.workspaceMode === 'local' && localClient) {
-        // 本地 Agent 循环模式
+        // 本地 Agent 循环模式：浏览器端直接调 LLM，工具调用走 FileServiceClient
         const fullContent = await runLocalAgentLoop(
           localClient,
           buildRequestConfig(provider),
@@ -203,14 +212,15 @@ export function useAgent() {
           }
         );
 
+        // runLocalAgentLoop 返回完整内容，直接覆盖占位消息
         const msg = messages.value.find(m => m.id === assistantMsgId);
         if (msg) msg.content = fullContent;
       } else {
-        // 服务端 SSE 流式模式
+        // 服务端 SSE 流式模式：HTTP POST → server AgentLoop → SSE 回推
         const streamCtx = {
           ...ctx,
           conversationHistory: history,
-          workspaceRoot: store.workspaceRoot || undefined,
+          workspaceRoot: store.workspaceRoot || undefined, // server 端 build 模式需要
         };
         await service.streamMessage(
           content,
