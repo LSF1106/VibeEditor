@@ -68,7 +68,13 @@ router.post('/stream', async (req: Request, res: Response) => {
       const loop = new AgentLoop(fs);
       await loop.run(provider, config, message, context as AgentContext, writeSSE);
     } else {
-      await provider.streamMessage(message, context as AgentContext, (chunk: string) => writeSSE({ chunk }));
+      await provider.streamMessage(message, context as AgentContext, (type, text) => {
+        if (type === 'thinking') {
+          writeSSE({ thinking: text });
+        } else {
+          writeSSE({ chunk: text });
+        }
+      });
       writeSSE({ done: true });
     }
   } catch (err) {

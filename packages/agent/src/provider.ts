@@ -98,7 +98,7 @@ export class OpenAILikeProvider implements IAgentProvider {
 
   async chatStream(
     messages: { role: string; content: string }[],
-    onChunk: (chunk: string) => void
+    onChunk: (type: 'thinking' | 'content', text: string) => void
   ): Promise<string> {
     const { llm, agent } = this.getConfig();
 
@@ -123,6 +123,7 @@ export class OpenAILikeProvider implements IAgentProvider {
     }
 
     let fullContent = '';
+    let fullThinking = '';
     const reader = response.body?.getReader();
     if (!reader) throw new Error('Stream not available');
 
@@ -145,10 +146,16 @@ export class OpenAILikeProvider implements IAgentProvider {
 
         try {
           const json = JSON.parse(dataStr);
-          const delta = json.choices?.[0]?.delta?.content;
-          if (delta) {
-            fullContent += delta;
-            onChunk(delta);
+          const delta = json.choices?.[0]?.delta;
+          if (!delta) continue;
+
+          if (delta.reasoning_content) {
+            fullThinking += delta.reasoning_content;
+            onChunk('thinking', delta.reasoning_content);
+          }
+          if (delta.content) {
+            fullContent += delta.content;
+            onChunk('content', delta.content);
           }
         } catch {
           // skip unparseable SSE lines
@@ -175,7 +182,7 @@ export class OpenAILikeProvider implements IAgentProvider {
   async streamMessage(
     message: string,
     context: AgentContext,
-    onChunk: (chunk: string) => void
+    onChunk: (type: 'thinking' | 'content', text: string) => void
   ): Promise<AgentMessage> {
     const { agent } = this.getConfig();
     const messages = buildMessages(agent, message, context);

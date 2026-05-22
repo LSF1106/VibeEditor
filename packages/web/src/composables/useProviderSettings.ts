@@ -9,23 +9,46 @@ export interface ProviderConfig {
   model: string;
 }
 
+/** 预制提供商模板 */
+export interface ProviderPreset {
+  id: string;
+  name: string;
+  apiUrl: string;
+  defaultModel: string;
+  models: string[];
+}
+
+/** 预制提供商列表 */
+export const PROVIDER_PRESETS: ProviderPreset[] = [
+  {
+    id: 'deepseek',
+    name: 'DeepSeek',
+    apiUrl: 'https://api.deepseek.com/v1',
+    defaultModel: '',
+    models: [],
+  },
+  {
+    id: 'openai',
+    name: 'OpenAI',
+    apiUrl: 'https://api.openai.com/v1',
+    defaultModel: '',
+    models: [],
+  },
+  {
+    id: 'siliconflow',
+    name: '硅基流动 (SiliconFlow)',
+    apiUrl: 'https://api.siliconflow.cn/v1',
+    defaultModel: '',
+    models: [],
+  },
+];
+
 const STORAGE_KEY = 'vibeeditor-providers';
 const ACTIVE_KEY = 'vibeeditor-active-provider';
 
-/** 默认内置的提供商配置（OpenAI），作为首次使用的兜底 */
-function getDefaultProviders(): ProviderConfig[] {
-  return [
-    {
-      id: 'openai',
-      name: 'OpenAI',
-      apiUrl: 'https://api.openai.com/v1',
-      apiKey: '',
-      model: 'gpt-4o',
-    },
-  ];
-}
+/** 首次使用时返回空列表，由 SettingsDialog 的引导界面帮助用户添加 */
 
-/** 从 localStorage 加载提供商列表 */
+/** 从 localStorage 加载提供商列表，首次使用返回空列表 */
 function loadProviders(): ProviderConfig[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -33,8 +56,8 @@ function loadProviders(): ProviderConfig[] {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) return parsed;
     }
-  } catch { /* 忽略损坏的数据，回退到默认值 */ }
-  return getDefaultProviders();
+  } catch { /* 忽略损坏的数据 */ }
+  return [];
 }
 
 /** 持久化到 localStorage */
@@ -61,9 +84,11 @@ function createProviderSettings() {
     activeProvider.value = providers.value.find(p => p.id === val) || null;
   });
 
+  let idCounter = 0;
+
   /** 添加提供商 */
   function addProvider(config: Omit<ProviderConfig, 'id'>) {
-    const id = `provider_${Date.now()}`;
+    const id = `provider_${Date.now()}_${++idCounter}`;
     const provider: ProviderConfig = { id, ...config };
     providers.value.push(provider);
     return provider;
@@ -76,13 +101,12 @@ function createProviderSettings() {
     providers.value[idx] = { ...providers.value[idx], ...updates };
   }
 
-  /** 删除提供商（不允许删除最后一个） */
+  /** 删除提供商 */
   function removeProvider(id: string) {
     const idx = providers.value.findIndex(p => p.id === id);
     if (idx === -1) return;
-    if (providers.value.length <= 1) return;
     providers.value.splice(idx, 1);
-    // 如果删除的是当前激活的，切换到第一个
+    // 如果删除的是当前激活的，切换到第一个（没有则置空）
     if (activeId.value === id) {
       activeId.value = providers.value[0]?.id || '';
     }

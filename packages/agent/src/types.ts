@@ -43,7 +43,7 @@ export interface IAgentProvider {
   readonly displayName: string;
   initialize(config: AgentConfig): Promise<void>;
   sendMessage(message: string, context: AgentContext): Promise<AgentMessage>;
-  streamMessage?(message: string, context: AgentContext, onChunk: (chunk: string) => void): Promise<AgentMessage>;
+  streamMessage?(message: string, context: AgentContext, onChunk: (type: 'thinking' | 'content', text: string) => void): Promise<AgentMessage>;
   dispose(): void;
 }
 
