@@ -12,7 +12,7 @@ export interface AgentMessage {
 
 /** SSE 流式事件类型 */
 export interface StreamEvent {
-  type: 'tool_start' | 'tool_end' | 'tool_result';
+  type: 'tool_start' | 'tool_end' | 'tool_result' | 'thinking_start' | 'thinking_end';
   message?: string;
   content?: string;
 }
@@ -33,7 +33,7 @@ export function createAgentService(baseUrl = '') {
       message: string,
       context: Record<string, unknown>,
       config: AgentConfig,
-      onChunk: (chunk: string) => void,
+      onChunk: (type: 'thinking' | 'content', text: string) => void,
       onEvent?: (event: StreamEvent) => void
     ): Promise<AgentMessage> {
       const body: Record<string, unknown> = { message, context, config };
@@ -57,6 +57,7 @@ export function createAgentService(baseUrl = '') {
       const decoder = new TextDecoder();
       let fullContent = '';
       let buffer = '';
+      let thinkingActive = false;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -81,14 +82,30 @@ export function createAgentService(baseUrl = '') {
               onEvent({ type: 'tool_result', content: data.tool_result });
             }
 
+            if (data.thinking) {
+              if (!thinkingActive) {
+                thinkingActive = true;
+                if (onEvent) onEvent({ type: 'thinking_start' });
+              }
+              onChunk('thinking', data.thinking);
+            }
+
             if (data.chunk) {
+              if (thinkingActive) {
+                thinkingActive = false;
+                if (onEvent) onEvent({ type: 'thinking_end' });
+              }
               fullContent += data.chunk;
-              onChunk(data.chunk);
+              onChunk('content', data.chunk);
             }
           } catch {
             // skip unparseable SSE lines
           }
         }
+      }
+
+      if (thinkingActive && onEvent) {
+        onEvent({ type: 'thinking_end' });
       }
 
       return {

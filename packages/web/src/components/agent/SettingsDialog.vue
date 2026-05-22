@@ -7,21 +7,33 @@
       </div>
 
       <div class="dialog-body">
-        <!-- 提供商列表 -->
-        <div class="provider-list">
+        <!-- 空状态：无提供商时引导添加 -->
+        <div v-if="!editing && !pickingPreset && settings.providers.value.length === 0" class="empty-state">
+          <div class="empty-icon">&#9881;</div>
+          <div class="empty-title">尚未添加 LLM 提供商</div>
+          <div class="empty-desc">添加 AI 提供商以使用智能代码编辑功能</div>
+          <button class="empty-cta" @click="startAddWithPreset(PROVIDER_PRESETS[0])">
+            添加 DeepSeek（推荐）
+          </button>
+          <button class="empty-secondary" @click="pickingPreset = true">
+            选择其他提供商
+          </button>
+        </div>
+
+        <!-- 提供商列表（合并同一提供商的多个模型为一条） -->
+        <div v-if="settings.providers.value.length > 0" class="provider-list">
           <div
-            v-for="p in settings.providers.value"
-            :key="p.id"
+            v-for="g in groupedProviders"
+            :key="g.ids[0]"
             class="provider-item"
-            :class="{ active: p.id === editingId }"
-            @click="startEdit(p)"
+            :class="{ active: editingId && g.ids.includes(editingId) }"
+            @click="startEdit(g)"
           >
-            <span class="provider-name">{{ p.name }}</span>
-            <span class="provider-model">{{ p.model }}</span>
+            <span class="provider-name">{{ g.name }}</span>
+            <span class="provider-model">{{ g.models.join(', ') }}</span>
             <button
-              v-if="settings.providers.value.length > 1"
               class="provider-delete"
-              @click.stop="deleteProvider(p.id)"
+              @click.stop="deleteGroup(g)"
             >x</button>
           </div>
         </div>
@@ -30,52 +42,71 @@
         <div v-if="editing" class="edit-form">
           <div class="form-group">
             <label>名称</label>
-            <input v-model="form.name" class="form-input" placeholder="例如: OpenAI, Ollama" />
-          </div>
-          <div class="form-group">
-            <label>API 地址</label>
-            <input v-model="form.apiUrl" class="form-input" placeholder="https://api.openai.com/v1" />
+            <input v-model="form.name" class="form-input" placeholder="例如: 我的 DeepSeek" />
           </div>
           <div class="form-group">
             <label>API Key</label>
             <input v-model="form.apiKey" class="form-input" type="password" placeholder="sk-..." />
           </div>
-          <div class="form-group">
-            <label>模型名称</label>
-            <div class="model-row">
-              <input v-model="form.model" class="form-input" placeholder="gpt-4o" />
+
+          <!-- API 地址（默认隐藏） -->
+          <div class="form-group api-url-group">
+            <div class="label-row">
+              <label>API 地址</label>
               <button
-                class="fetch-btn"
-                :disabled="fetchingModels || !form.apiUrl.trim()"
-                @click="fetchModels"
-              >
-                {{ fetchingModels ? '获取中...' : '获取模型' }}
-              </button>
+                v-if="!showApiUrl"
+                class="toggle-api-btn"
+                title="修改 API 地址"
+                @click="showApiUrl = true"
+              >&#8230;</button>
             </div>
-            <!-- 获取到的模型列表下拉 -->
-            <div v-if="availableModels.length > 0" class="model-dropdown">
-              <div
-                v-for="m in availableModels"
-                :key="m"
-                class="model-option"
-                :class="{ selected: form.model === m }"
-                @click="form.model = m"
-              >
-                {{ m }}
-              </div>
-            </div>
-            <!-- 获取失败提示 -->
-            <div v-if="fetchError" class="fetch-error">{{ fetchError }}</div>
+            <input v-if="showApiUrl" v-model="form.apiUrl" class="form-input" placeholder="https://api.openai.com/v1" />
           </div>
+
+          <!-- 模型选择 -->
+          <div class="form-group">
+            <label>模型</label>
+            <div v-if="fetchingModels" class="model-loading">获取模型列表中...</div>
+            <div v-else-if="availableModels.length > 0" class="model-checklist">
+              <label v-for="m in availableModels" :key="m" class="model-check-item" :class="{ checked: selectedModels.has(m) }">
+                <input type="checkbox" :value="m" :checked="selectedModels.has(m)" @change="toggleModel(m)" />
+                <span class="model-check-label">{{ m }}</span>
+              </label>
+            </div>
+            <div v-else-if="fetchError" class="fetch-error">{{ fetchError }}</div>
+            <div v-else-if="!form.apiKey.trim()" class="model-hint">输入 API Key 后自动获取</div>
+            <div v-else class="model-hint">
+              <a class="fetch-link" @click="fetchModels">点击获取模型列表</a>
+            </div>
+          </div>
+
           <div class="form-actions">
-            <button class="form-btn save" @click="saveForm">保存</button>
+            <button class="form-btn save" @click="saveForm" :disabled="selectedModels.size === 0">保存</button>
             <button class="form-btn cancel" @click="cancelEdit">取消</button>
           </div>
         </div>
 
-        <!-- 新增按钮（仅在不编辑时显示） -->
-        <div v-if="!editing" class="add-btn-row">
-          <button class="form-btn add" @click="startAdd">+ 添加提供商</button>
+        <!-- 预制提供商选择（添加时先选类型） -->
+        <div v-if="pickingPreset" class="preset-picker">
+          <div class="preset-title">选择提供商类型</div>
+          <div
+            v-for="preset in PROVIDER_PRESETS"
+            :key="preset.id"
+            class="preset-card"
+            @click="startAddWithPreset(preset)"
+          >
+            <span class="preset-name">{{ preset.name }}</span>
+            <span class="preset-hint">仅需输入 API Key</span>
+          </div>
+          <div class="preset-card custom" @click="startAdd">
+            <span class="preset-name">自定义</span>
+            <span class="preset-hint">OpenAI 兼容 API 格式</span>
+          </div>
+        </div>
+
+        <!-- 新增按钮 -->
+        <div v-if="!editing && !pickingPreset && settings.providers.value.length > 0" class="add-btn-row">
+          <button class="form-btn add" @click="pickingPreset = true">+ 添加提供商</button>
         </div>
       </div>
     </div>
@@ -83,66 +114,126 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue';
-import { useProviderSettings, fetchAvailableModels, type ProviderConfig } from '../../composables/useProviderSettings';
+import { ref, reactive, computed, watch } from 'vue';
+import { useProviderSettings, fetchAvailableModels, PROVIDER_PRESETS, type ProviderConfig, type ProviderPreset } from '../../composables/useProviderSettings';
 
 const props = defineProps<{ visible: boolean }>();
 const emit = defineEmits<{ close: [] }>();
 
 const settings = useProviderSettings();
 
-// ===== 编辑状态管理 =====
-// editingId: 当前编辑的提供商 ID（null = 新增模式）
-// editing:   是否显示编辑表单
-// 两种进入方式：
-//   - 点击已有提供商 → startEdit() → editingId 设为该 ID
-//   - 点击"+ 添加提供商" → startAdd() → editingId 为 null
-const editingId = ref<string | null>(null);   // 当前编辑的提供商 ID（null = 新增）
-const editing = ref(false);                     // 是否显示编辑表单
-const fetchingModels = ref(false);             // 是否正在获取模型列表
-const availableModels = ref<string[]>([]);     // 从 API 获取到的模型列表
-const fetchError = ref('');                    // 获取模型列表的错误信息
+// ===== 状态 =====
+const editingId = ref<string | null>(null);
+const editingGroupIds = ref<string[]>([]);           // 当前编辑组的全部条目 ID
+const editing = ref(false);
+const pickingPreset = ref(false);
+const showApiUrl = ref(false);
+const fetchingModels = ref(false);
+const availableModels = ref<string[]>([]);
+const fetchError = ref('');
+const selectedModels = ref<Set<string>>(new Set());
+
+let fetchTimer: ReturnType<typeof setTimeout> | null = null;
 
 const form = reactive({
   name: '',
   apiUrl: '',
   apiKey: '',
-  model: '',
 });
 
-/** 开始编辑已有提供商 */
-function startEdit(provider: ProviderConfig) {
-  editingId.value = provider.id;
-  editing.value = true;
-  form.name = provider.name;
-  form.apiUrl = provider.apiUrl;
-  form.apiKey = provider.apiKey;
-  form.model = provider.model;
-  availableModels.value = [];
-  fetchError.value = '';
+// ===== 将同一提供商的多个模型合并为一条展示 =====
+interface ProviderGroup {
+  ids: string[];
+  name: string;
+  apiUrl: string;
+  apiKey: string;
+  models: string[];
 }
 
-/** 开始新增提供商 */
+const groupedProviders = computed<ProviderGroup[]>(() => {
+  const map = new Map<string, ProviderGroup>();
+  for (const p of settings.providers.value) {
+    const key = `${p.name}::${p.apiUrl}::${p.apiKey}`;
+    const existing = map.get(key);
+    if (existing) {
+      existing.ids.push(p.id);
+      existing.models.push(p.model);
+    } else {
+      map.set(key, {
+        ids: [p.id],
+        name: p.name,
+        apiUrl: p.apiUrl,
+        apiKey: p.apiKey,
+        models: [p.model],
+      });
+    }
+  }
+  return [...map.values()];
+});
+
+// ===== 自动获取模型 =====
+function scheduleAutoFetch() {
+  if (fetchTimer) clearTimeout(fetchTimer);
+  if (!form.apiKey.trim() || !form.apiUrl.trim()) return;
+  fetchTimer = setTimeout(() => fetchModels(), 800);
+}
+
+watch(() => form.apiKey, () => scheduleAutoFetch());
+
+/** 编辑分组：预选该组全部模型 */
+function startEdit(group: ProviderGroup) {
+  editingId.value = group.ids[0];
+  editingGroupIds.value = [...group.ids];
+  editing.value = true;
+  pickingPreset.value = false;
+  showApiUrl.value = false;
+  form.name = group.name;
+  form.apiUrl = group.apiUrl;
+  form.apiKey = group.apiKey;
+  availableModels.value = [];
+  fetchError.value = '';
+  selectedModels.value = new Set(group.models);
+  scheduleAutoFetch();
+}
+
 function startAdd() {
   editingId.value = null;
+  editingGroupIds.value = [];
   editing.value = true;
+  pickingPreset.value = false;
+  showApiUrl.value = false;
   form.name = '';
   form.apiUrl = '';
   form.apiKey = '';
-  form.model = '';
   availableModels.value = [];
   fetchError.value = '';
+  selectedModels.value = new Set();
 }
 
-/**
- * 从提供商 API 获取可用模型列表
- *
- * 兼容两种 API 格式（按顺序尝试）：
- * 1. OpenAI 兼容：GET {apiUrl}/models → 取 data[].id
- * 2. Ollama 格式：  GET {baseUrl}/api/tags → 取 models[].name
- *
- * 任一格式成功即返回结果，都失败则抛出错误。
- */
+function startAddWithPreset(preset: ProviderPreset) {
+  editingId.value = null;
+  editingGroupIds.value = [];
+  editing.value = true;
+  pickingPreset.value = false;
+  showApiUrl.value = false;
+  form.name = preset.name;
+  form.apiUrl = preset.apiUrl;
+  form.apiKey = '';
+  availableModels.value = [];
+  fetchError.value = '';
+  selectedModels.value = new Set();
+}
+
+function toggleModel(model: string) {
+  const next = new Set(selectedModels.value);
+  if (next.has(model)) {
+    next.delete(model);
+  } else {
+    next.add(model);
+  }
+  selectedModels.value = next;
+}
+
 async function fetchModels() {
   fetchingModels.value = true;
   availableModels.value = [];
@@ -161,46 +252,52 @@ async function fetchModels() {
   }
 }
 
-/**
- * 保存表单（新增或更新）
- *
- * 根据 editingId 判断操作类型：
- * - editingId 非 null → 更新现有提供商
- * - editingId 为 null  → 新增提供商
- */
+/** 保存：先删除旧组全部条目，再按新模型列表重建 */
 function saveForm() {
-  if (!form.name.trim() || !form.apiUrl.trim() || !form.model.trim()) return;
+  if (!form.name.trim() || !form.apiUrl.trim() || selectedModels.value.size === 0) return;
 
-  if (editingId.value) {
-    settings.updateProvider(editingId.value, {
-      name: form.name.trim(),
-      apiUrl: form.apiUrl.trim(),
-      apiKey: form.apiKey.trim(),
-      model: form.model.trim(),
-    });
-  } else {
-    settings.addProvider({
-      name: form.name.trim(),
-      apiUrl: form.apiUrl.trim(),
-      apiKey: form.apiKey.trim(),
-      model: form.model.trim(),
-    });
+  const models = [...selectedModels.value];
+  const base = {
+    name: form.name.trim(),
+    apiUrl: form.apiUrl.trim(),
+    apiKey: form.apiKey.trim(),
+  };
+
+  // 编辑模式：先移除该组所有旧条目
+  if (editingGroupIds.value.length > 0) {
+    for (const id of editingGroupIds.value) {
+      settings.removeProvider(id);
+    }
+  }
+
+  // 每个选中的模型生成一个独立条目
+  for (const model of models) {
+    settings.addProvider({ ...base, model });
   }
 
   editing.value = false;
   editingId.value = null;
+  editingGroupIds.value = [];
 }
 
 function cancelEdit() {
   editing.value = false;
   editingId.value = null;
+  editingGroupIds.value = [];
+  pickingPreset.value = false;
+  showApiUrl.value = false;
   availableModels.value = [];
   fetchError.value = '';
+  selectedModels.value = new Set();
+  if (fetchTimer) { clearTimeout(fetchTimer); fetchTimer = null; }
 }
 
-function deleteProvider(id: string) {
-  settings.removeProvider(id);
-  if (editingId.value === id) {
+/** 删除整个分组 */
+function deleteGroup(group: ProviderGroup) {
+  for (const id of group.ids) {
+    settings.removeProvider(id);
+  }
+  if (editingId.value && group.ids.includes(editingId.value)) {
     cancelEdit();
   }
 }
@@ -208,6 +305,21 @@ function deleteProvider(id: string) {
 function close() {
   emit('close');
 }
+
+// 每次打开对话框时重置
+watch(() => props.visible, (v) => {
+  if (v) {
+    editing.value = false;
+    editingId.value = null;
+    editingGroupIds.value = [];
+    pickingPreset.value = false;
+    showApiUrl.value = false;
+    availableModels.value = [];
+    fetchError.value = '';
+    selectedModels.value = new Set();
+    if (fetchTimer) { clearTimeout(fetchTimer); fetchTimer = null; }
+  }
+});
 </script>
 
 <style scoped>
@@ -328,53 +440,77 @@ function close() {
   outline: none;
   border-color: var(--accent-color);
 }
-.model-row {
+
+/* ---- API 地址行 ---- */
+.api-url-group .label-row {
   display: flex;
+  align-items: center;
   gap: 6px;
 }
-.model-row .form-input {
-  flex: 1;
-}
-.fetch-btn {
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
-  color: var(--accent-color);
-  font-size: 11px;
-  padding: 4px 10px;
-  border-radius: 4px;
+.toggle-api-btn {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 14px;
   cursor: pointer;
-  white-space: nowrap;
-  font-family: inherit;
+  padding: 0 4px;
+  line-height: 1;
+  opacity: 0.4;
 }
-.fetch-btn:hover:not(:disabled) {
-  border-color: var(--accent-color);
-  background: var(--bg-hover);
+.toggle-api-btn:hover {
+  opacity: 0.8;
+  color: var(--text-primary);
 }
-.fetch-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+
+/* ---- 模型多选列表 ---- */
+.model-loading {
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 6px 0;
 }
-.model-dropdown {
-  max-height: 140px;
+.model-hint {
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 4px 0;
+}
+.fetch-link {
+  color: var(--accent-color);
+  cursor: pointer;
+}
+.fetch-link:hover {
+  text-decoration: underline;
+}
+.model-checklist {
+  max-height: 180px;
   overflow-y: auto;
   background: var(--bg-tertiary);
   border: 1px solid var(--border-color);
   border-radius: 4px;
-  margin-top: 2px;
 }
-.model-option {
-  padding: 5px 10px;
+.model-check-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
   font-size: 12px;
   cursor: pointer;
-  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-color);
 }
-.model-option:hover {
+.model-check-item:last-child {
+  border-bottom: none;
+}
+.model-check-item:hover {
   background: var(--bg-hover);
-  color: var(--text-primary);
 }
-.model-option.selected {
-  color: var(--accent-color);
+.model-check-item.checked {
   background: var(--bg-secondary);
+}
+.model-check-item input[type="checkbox"] {
+  accent-color: var(--accent-color);
+  cursor: pointer;
+}
+.model-check-label {
+  color: var(--text-primary);
 }
 .fetch-error {
   font-size: 11px;
@@ -398,8 +534,12 @@ function close() {
   background: var(--accent-color);
   color: #fff;
 }
-.form-btn.save:hover {
+.form-btn.save:hover:not(:disabled) {
   background: var(--accent-hover);
+}
+.form-btn.save:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 .form-btn.cancel {
   background: var(--bg-tertiary);
@@ -422,5 +562,92 @@ function close() {
 }
 .add-btn-row {
   margin-top: 12px;
+}
+.preset-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+.preset-title {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 2px;
+}
+.preset-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.preset-card:hover {
+  border-color: var(--accent-color);
+}
+.preset-card.custom {
+  border-style: dashed;
+}
+.preset-name {
+  font-weight: 500;
+}
+.preset-hint {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 32px 16px;
+}
+.empty-icon {
+  font-size: 36px;
+  color: var(--text-secondary);
+  opacity: 0.4;
+  margin-bottom: 12px;
+}
+.empty-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.empty-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
+.empty-cta {
+  background: var(--accent-color);
+  color: #fff;
+  border: none;
+  padding: 8px 24px;
+  font-size: 13px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: inherit;
+  margin-bottom: 8px;
+}
+.empty-cta:hover {
+  background: var(--accent-hover);
+}
+.empty-secondary {
+  background: none;
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  padding: 6px 16px;
+  font-size: 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.empty-secondary:hover {
+  border-color: var(--accent-color);
+  color: var(--text-primary);
 }
 </style>

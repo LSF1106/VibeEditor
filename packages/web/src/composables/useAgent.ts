@@ -14,6 +14,7 @@ export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
+  thinking?: string;
   timestamp: number;
   editOperations?: ParsedEdit[];
 }
@@ -67,10 +68,11 @@ function buildAgentContext(activeFilePath?: string): AgentContext {
 export function useAgent() {
   const messages = ref<ChatMessage[]>([]);
   const isProcessing = ref(false);
-  const config = ref<AgentConfig>({ mode: 'plan' });
+  const config = ref<AgentConfig>({ mode: 'build' });
   const service = createAgentService();
   const lastEdits = ref<ParsedEdit[]>([]);
   const toolStatus = ref<string>('');
+  const thinkingActive = ref(false);
 
   function buildRequestConfig(provider?: ProviderConfig | null): AgentConfig {
     const cfg: AgentConfig = { ...config.value };
@@ -142,14 +144,16 @@ export function useAgent() {
 
     lastEdits.value = [];
     toolStatus.value = '';
+    thinkingActive.value = false;
 
     const assistantMsgId = `msg_${Date.now() + 1}`;
-    messages.value.push({
+    const assistantMsg: ChatMessage = {
       id: assistantMsgId,
       role: 'assistant',
       content: '',
       timestamp: Date.now(),
-    });
+    };
+    messages.value.push(assistantMsg);
 
     isProcessing.value = true;
 
@@ -159,6 +163,7 @@ export function useAgent() {
       const history = messages.value.slice(0, -1).filter(m => m.id !== assistantMsgId);
 
       if (store.workspaceMode === 'local' && localClient) {
+        // Local mode: thinking display not supported (non-streaming LLM call)
         const fullContent = await runLocalAgentLoop(
           localClient,
           buildRequestConfig(provider),
@@ -187,9 +192,15 @@ export function useAgent() {
           content,
           streamCtx,
           buildRequestConfig(provider),
-          (chunk: string) => {
+          (type: 'thinking' | 'content', text: string) => {
             const msg = messages.value.find(m => m.id === assistantMsgId);
-            if (msg) msg.content += chunk;
+            if (!msg) return;
+            if (type === 'thinking') {
+              msg.thinking = (msg.thinking || '') + text;
+              thinkingActive.value = true;
+            } else {
+              msg.content += text;
+            }
             if (onChunk) onChunk();
           },
           (event: StreamEvent) => {
@@ -197,6 +208,10 @@ export function useAgent() {
               toolStatus.value = event.message || '';
             } else if (event.type === 'tool_end') {
               toolStatus.value = '';
+            } else if (event.type === 'thinking_start') {
+              thinkingActive.value = true;
+            } else if (event.type === 'thinking_end') {
+              thinkingActive.value = false;
             }
           }
         );
@@ -215,6 +230,7 @@ export function useAgent() {
     } finally {
       const msg = messages.value.find(m => m.id === assistantMsgId);
       if (msg) msg.timestamp = Date.now();
+      thinkingActive.value = false;
       isProcessing.value = false;
     }
   }
@@ -223,11 +239,12 @@ export function useAgent() {
     messages.value = [];
     lastEdits.value = [];
     toolStatus.value = '';
+    thinkingActive.value = false;
   }
 
   function setMode(mode: AgentConfig['mode']) {
     config.value.mode = mode;
   }
 
-  return { messages, isProcessing, config, lastEdits, toolStatus, sendMessage, streamMessage, clearMessages, setMode };
+  return { messages, isProcessing, config, lastEdits, toolStatus, thinkingActive, sendMessage, streamMessage, clearMessages, setMode };
 }

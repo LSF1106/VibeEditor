@@ -1,80 +1,105 @@
 <template>
   <div class="agent-panel">
-    <!-- 提供商选择 + 设置按钮 -->
-    <div class="agent-header">
-      <div class="header-left">
-        <select
-          class="provider-select"
-          :value="providerSettings.activeId.value"
-          @change="providerSettings.setActive(($event.target as HTMLSelectElement).value)"
-        >
-          <option
-            v-for="p in providerSettings.providers.value"
-            :key="p.id"
-            :value="p.id"
-          >
-            {{ p.name }} ({{ p.model }})
-          </option>
-        </select>
-        <button class="settings-btn" title="提供商设置" @click="showSettings = true">&#9881;</button>
-      </div>
-      <div class="agent-mode-selector">
-        <button
-          v-for="mode in modes"
-          :key="mode"
-          class="mode-btn"
-          :class="{ active: agent.config.value.mode === mode }"
-          @click="agent.setMode(mode)"
-        >
-          {{ mode }}
-        </button>
-      </div>
+    <!-- 思考进度条 —— 处理时在面板最上方滚动 -->
+    <div v-if="agent.isProcessing.value" class="thinking-progress">
+      <div class="thinking-progress-bar"></div>
     </div>
 
-    <!-- 消息列表 -->
-    <div class="agent-messages" ref="messagesContainer">
-      <div v-if="agent.messages.value.length === 0" class="agent-empty">
-        Ask the agent to help with editing
+    <!-- 无提供商时的引导页面 -->
+    <div v-if="providerSettings.providers.value.length === 0" class="agent-guide">
+      <div class="guide-icon">&#9881;</div>
+      <div class="guide-title">还没有 AI 模型服务</div>
+      <div class="guide-desc">
+        需要一个 AI 模型来提供代码编辑建议。<br />
+        支持 DeepSeek、OpenAI 等兼容接口的服务。
       </div>
-      <div
-        v-for="msg in agent.messages.value"
-        :key="msg.id"
-        class="agent-message"
-        :class="'msg-' + msg.role"
-      >
-        <div class="msg-role">{{ msg.role }}</div>
-        <div class="msg-content" v-html="renderMarkdown(msg.content)"></div>
-        <!-- 编辑操作结果提示 -->
-        <div v-if="msg.editOperations && msg.editOperations.length > 0" class="edit-summary">
-          {{ msg.editOperations.length }} 个文件已修改：
-          <span v-for="e in msg.editOperations" :key="e.path" class="edit-file">{{ e.path }}</span>
-          <button class="undo-btn" @click="emit('undo-edits')">Undo</button>
+      <button class="guide-cta" @click="showSettings = true">添加模型服务</button>
+    </div>
+
+    <!-- 有提供商时显示正常的聊天界面 -->
+    <template v-if="providerSettings.providers.value.length > 0">
+      <!-- 消息列表 -->
+      <div class="agent-messages" ref="messagesContainer">
+        <div v-if="agent.messages.value.length === 0" class="agent-empty">
+          Ask the agent to help with editing
+        </div>
+        <div
+          v-for="msg in agent.messages.value"
+          :key="msg.id"
+          class="agent-message"
+          :class="'msg-' + msg.role"
+        >
+          <div class="msg-role">{{ msg.role }}</div>
+
+          <!-- 思考过程 —— 可折叠，与最终结果有视觉区分 -->
+          <div v-if="msg.thinking" class="msg-thinking">
+            <div class="thinking-header" @click="toggleThinking(msg.id)">
+              <span class="thinking-indicator">&#9881; Reasoning</span>
+              <span class="thinking-toggle">{{ expandedThinking[msg.id] ? '&#9650;' : '&#9660;' }}</span>
+            </div>
+            <div v-if="expandedThinking[msg.id]" class="thinking-body">
+              <div class="thinking-content" v-html="renderMarkdown(msg.thinking)"></div>
+            </div>
+          </div>
+
+          <!-- 思考→结果分隔线 -->
+          <div v-if="msg.thinking && msg.content" class="thinking-separator">
+            <span class="separator-line"></span>
+            <span class="separator-label">Response</span>
+            <span class="separator-line"></span>
+          </div>
+
+          <div class="msg-content" v-html="renderMarkdown(msg.content)"></div>
+          <div v-if="msg.editOperations && msg.editOperations.length > 0" class="edit-summary">
+            {{ msg.editOperations.length }} 个文件已修改：
+            <span v-for="e in msg.editOperations" :key="e.path" class="edit-file">{{ e.path }}</span>
+            <button class="undo-btn" @click="emit('undo-edits')">Undo</button>
+          </div>
+        </div>
+
+        <!-- 处理中指示：正在思考时显示动画，执行工具时显示工具状态 -->
+        <div v-if="agent.isProcessing.value" class="agent-loading">
+          <template v-if="agent.thinkingActive.value">
+            <span class="thinking-pulse"></span> Thinking...
+          </template>
+          <template v-else-if="agent.toolStatus.value">
+            {{ agent.toolStatus.value }}
+          </template>
         </div>
       </div>
-      <div v-if="agent.isProcessing.value" class="agent-loading">
-        <template v-if="agent.toolStatus.value">{{ agent.toolStatus.value }}</template>
-        <template v-else>Thinking...</template>
+
+      <!-- 输入区域拖拽手柄 -->
+      <div class="input-resize-handle" @mousedown="startInputResize"></div>
+
+      <!-- 输入区域 -->
+      <div class="agent-input-area" :style="{ height: inputHeight + 'px' }">
+        <textarea
+          v-model="input"
+          class="agent-input"
+          placeholder="Ask the agent..."
+          rows="2"
+          @keydown.enter.exact.prevent="send"
+          @keydown.ctrl.enter.prevent="send"
+          @keydown.meta.enter.prevent="send"
+        ></textarea>
+        <button class="agent-send-btn" @click="send" :disabled="!input.trim() || agent.isProcessing.value">
+          Send
+        </button>
       </div>
-    </div>
 
-    <!-- 输入区域拖拽手柄 -->
-    <div class="input-resize-handle" @mousedown="startInputResize"></div>
-
-    <!-- 输入区域 -->
-    <div class="agent-input-area" :style="{ height: inputHeight + 'px' }">
-      <textarea
-        v-model="input"
-        class="agent-input"
-        placeholder="Ask the agent..."
-        rows="2"
-        @keydown.enter.exact.prevent="send"
-        @keydown.ctrl.enter.prevent="send"
-        @keydown.meta.enter.prevent="send"
-      ></textarea>
-      <button class="agent-send-btn" @click="send" :disabled="!input.trim() || agent.isProcessing.value">
-        Send
-      </button>
-    </div>
+      <!-- 提供商选择 + 模式切换 -->
+      <div class="agent-footer">
+        <div class="footer-left">
+          <ProviderSelect
+            :providers="providerSettings.providers.value"
+            :activeId="providerSettings.activeId.value"
+            @select="providerSettings.setActive($event)"
+          />
+          <button class="settings-btn" title="提供商设置" @click="showSettings = true">&#9881;</button>
+        </div>
+        <ModeSelector v-model="agent.config.value.mode" />
+      </div>
+    </template>
 
     <!-- 设置对话框 -->
     <SettingsDialog :visible="showSettings" @close="showSettings = false" />
@@ -82,7 +107,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, nextTick, onMounted, onUnmounted } from 'vue';
+import { ref, reactive, nextTick, onMounted, onUnmounted } from 'vue';
 import { useAgent } from '../../composables/useAgent';
 import { useProviderSettings } from '../../composables/useProviderSettings';
 import { useEditorStore } from '../../stores/editor';
@@ -90,6 +115,8 @@ import { renderMarkdown } from '../../services/markdown';
 import type { FileServiceClient } from '../../services/fileService';
 import type { ParsedEdit } from '../../services/editParser';
 import SettingsDialog from './SettingsDialog.vue';
+import ModeSelector from './ModeSelector.vue';
+import ProviderSelect from './ProviderSelect.vue';
 
 const props = defineProps<{
   fileClient?: FileServiceClient | null;
@@ -105,19 +132,22 @@ const providerSettings = useProviderSettings();
 const editorStore = useEditorStore();
 const input = ref('');
 const messagesContainer = ref<HTMLElement>();
-const modes = ['build', 'plan'] as const;
 const showSettings = ref(false);
 const inputHeight = ref(90);
 let isResizingInput = false;
 
+// 思考内容展开/折叠状态
+const expandedThinking = reactive<Record<string, boolean>>({});
+
+function toggleThinking(msgId: string) {
+  expandedThinking[msgId] = !expandedThinking[msgId];
+}
+
 // ===== 自动滚动控制 =====
-// 策略：用户若手动上滚，暂停自动滚动；滑回底部时恢复
-// MutationObserver 监听 DOM 变化，配合 rAF 节流避免高频回调导致卡顿
-const userScrolledUp = ref(false);  // 用户是否手动上滚了
+const userScrolledUp = ref(false);
 let scrollRafId = 0;
 let observer: MutationObserver | null = null;
 
-/** 判断消息区域是否接近底部（50px 容差） */
 function isNearBottom(): boolean {
   const el = messagesContainer.value;
   if (!el) return false;
@@ -129,7 +159,6 @@ function scrollToBottom() {
   if (el) el.scrollTop = el.scrollHeight;
 }
 
-/** 用 rAF 节流调度滚动，避免高频 MutationObserver 回调导致卡顿 */
 function scheduleScroll(force = false) {
   cancelAnimationFrame(scrollRafId);
   scrollRafId = requestAnimationFrame(() => {
@@ -139,22 +168,10 @@ function scheduleScroll(force = false) {
   });
 }
 
-/** 用户手动上滚时暂停自动滚动，滑回底部时恢复自动滚动 */
-/** 用户手动滚动时决定是否恢复/暂停自动滚动
- *
- * isNearBottom(): 滚动到底部 50px 以内视为"用户在底部"
- * userScrolledUp: 用户离开底部 → true（暂停自滚）；滑回底部 → false（恢复自滚）
- */
 function onMessagesScroll() {
   userScrolledUp.value = !isNearBottom();
 }
 
-/**
- * MutationObserver 监听消息区域 DOM 变化
- *
- * 当流式内容追加、KaTeX 公式渲染等导致 DOM 变化时，若用户在底部则自动滚动。
- * 使用 rAF 节流避免高频 MutationObserver 回调导致卡顿。
- */
 function setupObserver() {
   const el = messagesContainer.value;
   if (!el) return;
@@ -168,16 +185,6 @@ function setupObserver() {
   });
 }
 
-/**
- * 发送消息的完整流程
- *
- * 1. 清空输入框，重置自动滚动状态
- * 2. 调用 agent.streamMessage() 开始流式（根据环境分发 local/server）
- * 3. nextTick 后滚动到底部（用户消息已渲染）
- * 4. 等待流式完成
- * 5. 如果有编辑结果（<edit> 块），通过 emit('apply-edits') 通知父组件写入文件
- * 6. 强制滚动到底部
- */
 async function send() {
   const text = input.value.trim();
   if (!text) return;
@@ -195,13 +202,11 @@ async function send() {
     props.fileClient
   );
 
-  // 等待 Vue 渲染用户消息后立即滚动
   await nextTick();
   scrollToBottom();
 
   await streamPromise;
 
-  // 流式完成后，若有编辑结果则通知父组件应用
   if (agent.lastEdits.value.length > 0) {
     emit('apply-edits', [...agent.lastEdits.value]);
     agent.lastEdits.value = [];
@@ -210,7 +215,6 @@ async function send() {
   scheduleScroll(true);
 }
 
-/** 输入区域高度拖拽（纵向 resize） */
 function startInputResize(e: MouseEvent) {
   isResizingInput = true;
   const startY = e.clientY;
@@ -249,35 +253,144 @@ onUnmounted(() => {
   flex-direction: column;
   height: 100%;
   background: var(--bg-secondary);
+  position: relative;
+  overflow: hidden;
 }
-.agent-header {
+
+/* ===== 思考进度条 ===== */
+.thinking-progress {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  z-index: 10;
+  overflow: hidden;
+  background: transparent;
+}
+
+.thinking-progress-bar {
+  width: 40%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, var(--accent-color), transparent);
+  animation: progress-scroll 1.2s ease-in-out infinite;
+  border-radius: 2px;
+}
+
+@keyframes progress-scroll {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(350%);
+  }
+}
+
+/* ===== 思考内容区域 ===== */
+.msg-thinking {
+  margin-bottom: 4px;
+  border: 1px solid rgba(255, 200, 50, 0.2);
+  border-radius: 4px;
+  background: rgba(255, 200, 50, 0.05);
+  overflow: hidden;
+}
+
+.thinking-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 10px;
+  font-size: 11px;
+  color: #d4a017;
+  cursor: pointer;
+  user-select: none;
+}
+.thinking-header:hover {
+  background: rgba(255, 200, 50, 0.08);
+}
+
+.thinking-indicator {
+  font-weight: 500;
+}
+
+.thinking-toggle {
+  font-size: 9px;
+  opacity: 0.6;
+}
+
+.thinking-body {
+  padding: 4px 10px 8px;
+  border-top: 1px solid rgba(255, 200, 50, 0.1);
+}
+
+.thinking-content {
+  font-size: 12px;
+  line-height: 1.5;
+  color: #b8952e;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ===== 思考 → 结果分隔线 ===== */
+.thinking-separator {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0;
+}
+
+.separator-line {
+  flex: 1;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.separator-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  letter-spacing: 1px;
+  white-space: nowrap;
+}
+
+/* ===== 处理中指示 ===== */
+.agent-loading {
+  color: var(--text-secondary);
+  font-size: 12px;
+  padding: 4px 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.thinking-pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent-color);
+  animation: pulse-dot 1s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 0.3; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.2); }
+}
+
+/* ===== Footer ===== */
+.agent-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 6px 12px;
-  border-bottom: 1px solid var(--border-color);
+  border-top: 1px solid var(--border-color);
   gap: 8px;
+  flex-shrink: 0;
 }
-.header-left {
+.footer-left {
   display: flex;
   align-items: center;
   gap: 4px;
   min-width: 0;
-}
-.provider-select {
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
-  color: var(--text-primary);
-  padding: 3px 6px;
-  font-size: 11px;
-  border-radius: 3px;
-  cursor: pointer;
-  max-width: 160px;
-  font-family: inherit;
-}
-.provider-select:focus {
-  outline: none;
-  border-color: var(--accent-color);
 }
 .settings-btn {
   background: none;
@@ -292,24 +405,6 @@ onUnmounted(() => {
 }
 .settings-btn:hover {
   color: var(--text-primary);
-  border-color: var(--accent-color);
-}
-.agent-mode-selector {
-  display: flex;
-  gap: 2px;
-}
-.mode-btn {
-  background: transparent;
-  border: 1px solid var(--border-color);
-  color: var(--text-secondary);
-  padding: 2px 8px;
-  font-size: 11px;
-  cursor: pointer;
-  border-radius: 3px;
-}
-.mode-btn.active {
-  background: var(--accent-color);
-  color: #fff;
   border-color: var(--accent-color);
 }
 .agent-messages {
@@ -455,11 +550,6 @@ onUnmounted(() => {
 .undo-btn:hover {
   background: rgba(255, 200, 50, 0.25);
 }
-.agent-loading {
-  color: var(--accent-color);
-  font-size: 12px;
-  padding: 4px 8px;
-}
 .agent-input-area {
   display: flex;
   gap: 6px;
@@ -509,5 +599,47 @@ onUnmounted(() => {
 .agent-send-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* ---- 无提供商引导页 ---- */
+.agent-guide {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 32px 24px;
+}
+.guide-icon {
+  font-size: 40px;
+  color: var(--text-secondary);
+  opacity: 0.35;
+  margin-bottom: 14px;
+}
+.guide-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.guide-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 22px;
+  line-height: 1.5;
+}
+.guide-cta {
+  background: var(--accent-color);
+  color: #fff;
+  border: none;
+  padding: 8px 24px;
+  font-size: 13px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: inherit;
+  margin-bottom: 8px;
+}
+.guide-cta:hover {
+  background: var(--accent-hover);
 }
 </style>
