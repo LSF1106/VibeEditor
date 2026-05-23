@@ -107,6 +107,11 @@
             :content="store.activeTab.content"
             :file-name="store.activeTab.name"
           />
+          <PptxViewer
+            v-else-if="store.activeTab && store.activeTab.viewMode === 'pptx'"
+            :content="store.activeTab.content"
+            :file-name="store.activeTab.name"
+          />
           <div v-else class="editor-placeholder">
             <div class="placeholder-content">
               <p class="placeholder-title">VibeEditor</p>
@@ -180,6 +185,7 @@ import MonacoEditor from '../editor/MonacoEditor.vue';
 import ImageViewer from '../editor/ImageViewer.vue';
 import DocxViewer from '../editor/DocxViewer.vue';
 import ExcelViewer from '../editor/ExcelViewer.vue';
+import PptxViewer from '../editor/PptxViewer.vue';
 import AgentPanel from '../agent/AgentPanel.vue';
 import SaveDialog from '../SaveDialog.vue';
 import StatusBar from '../StatusBar.vue';

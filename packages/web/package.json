@@ -15,6 +15,7 @@
     "@vibeeditor/core": "0.1.0",
     "katex": "^0.16.46",
     "@vue-office/excel": "^1.7.14",
+    "@vue-office/pptx": "^1.0.1",
     "docx-preview": "^0.3.7",
     "markdown-it": "^14.1.1",
     "markdown-it-texmath": "^1.0.0",

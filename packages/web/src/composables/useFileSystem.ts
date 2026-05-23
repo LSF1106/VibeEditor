@@ -146,6 +146,9 @@ export function useFileSystem() {
       } else if (viewMode === 'excel') {
         const buffer = await client.readFileBuffer(filePath);
         store.openFile(filePath, arrayBufferToBase64(buffer));
+      } else if (viewMode === 'pptx') {
+        const buffer = await client.readFileBuffer(filePath);
+        store.openFile(filePath, arrayBufferToBase64(buffer));
       } else if (ext === 'doc') {
         store.openFile(filePath, '');
       } else {
@@ -302,6 +305,9 @@ export function useFileSystem() {
         const buffer = await result.file.arrayBuffer();
         store.openFile(result.path, arrayBufferToBase64(buffer));
       } else if (viewMode === 'excel') {
+        const buffer = await result.file.arrayBuffer();
+        store.openFile(result.path, arrayBufferToBase64(buffer));
+      } else if (viewMode === 'pptx') {
         const buffer = await result.file.arrayBuffer();
         store.openFile(result.path, arrayBufferToBase64(buffer));
       } else if (ext === 'doc') {
