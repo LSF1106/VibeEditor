@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 
 contextBridge.exposeInMainWorld('electronAPI', {
   readFile: (filePath: string) => ipcRenderer.invoke('file:read', filePath),
+  readBinaryFile: (filePath: string) => ipcRenderer.invoke('file:readBinary', filePath),
   writeFile: (filePath: string, content: string) => ipcRenderer.invoke('file:write', filePath, content),
   deleteFile: (filePath: string) => ipcRenderer.invoke('file:delete', filePath),
   readDir: (dirPath: string) => ipcRenderer.invoke('file:readDir', dirPath),

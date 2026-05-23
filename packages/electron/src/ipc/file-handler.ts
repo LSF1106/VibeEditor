@@ -37,6 +37,20 @@ export function registerFileHandlers(ipcMain: IpcMain, dialog: Dialog) {
     return fs.readFile(p, 'utf-8');
   });
 
+  ipcMain.handle('file:readBinary', async (_e, filePath: string) => {
+    const p = resolvePath(filePath);
+    const buf = await fs.readFile(p);
+    const ext = path.extname(p).toLowerCase().replace('.', '');
+    const mimeMap: Record<string, string> = {
+      png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+      gif: 'image/gif', svg: 'image/svg+xml', webp: 'image/webp',
+      bmp: 'image/bmp', ico: 'image/x-icon', tiff: 'image/tiff',
+    };
+    const mime = mimeMap[ext] || 'application/octet-stream';
+    const base64 = buf.toString('base64');
+    return `data:${mime};base64,${base64}`;
+  });
+
   ipcMain.handle('file:write', async (_e, filePath: string, content: string) => {
     const p = resolvePath(filePath);
     await fs.mkdir(path.dirname(p), { recursive: true });

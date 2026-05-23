@@ -1,6 +1,15 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 
+const IMAGE_EXTENSIONS = new Set([
+  'png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp', 'ico', 'tiff',
+]);
+
+export function isImageFile(filePath: string): boolean {
+  const ext = filePath.split('.').pop()?.toLowerCase();
+  return ext ? IMAGE_EXTENSIONS.has(ext) : false;
+}
+
 /** 编辑器标签页 —— 代表一个打开的文件 */
 export interface EditorTab {
   id: string;
@@ -11,6 +20,7 @@ export interface EditorTab {
   originalContent: string;
   isDirty: boolean;
   isUntitled: boolean;
+  type: 'text' | 'image';
 }
 
 /** 工作区模式 */
@@ -65,6 +75,7 @@ export const useEditorStore = defineStore('editor', () => {
       originalContent: content,
       isDirty: false,
       isUntitled: false,
+      type: isImageFile(filePath) ? 'image' : 'text',
     };
     tabs.value.push(tab);
     activeTabId.value = id;
@@ -82,6 +93,7 @@ export const useEditorStore = defineStore('editor', () => {
       originalContent: '',
       isDirty: false,
       isUntitled: true,
+      type: 'text',
     };
     tabs.value.push(tab);
     activeTabId.value = id;
@@ -129,6 +141,7 @@ export const useEditorStore = defineStore('editor', () => {
       tab.path = newPath;
       tab.name = newPath.split('/').pop() || newPath.split('\\').pop() || newPath;
       tab.language = getLanguageFromPath(newPath);
+      tab.type = isImageFile(newPath) ? 'image' : 'text';
       tab.isUntitled = false;
     }
   };

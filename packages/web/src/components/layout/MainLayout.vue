@@ -84,8 +84,14 @@
           </div>
         </div>
         <div class="editor-container">
+          <ImageViewer
+            v-if="store.activeTab && store.activeTab.type === 'image'"
+            :key="store.activeTab.id"
+            :src="store.activeTab.content"
+            :filename="store.activeTab.name"
+          />
           <MonacoEditor
-            v-if="store.activeTab"
+            v-else-if="store.activeTab"
             :key="store.activeTab.id"
             :content="store.activeTab.content"
             :language="store.activeTab.language"
@@ -161,6 +167,7 @@ import type { SideBarSection } from './SideBar.vue';
 import FileTree from '../file-tree/FileTree.vue';
 import SearchPanel from '../SearchPanel.vue';
 import MonacoEditor from '../editor/MonacoEditor.vue';
+import ImageViewer from '../editor/ImageViewer.vue';
 import AgentPanel from '../agent/AgentPanel.vue';
 import SaveDialog from '../SaveDialog.vue';
 import StatusBar from '../StatusBar.vue';

@@ -10,6 +10,7 @@ import {
 } from '../services/fileService';
 import { getEditorInstance } from '../services/editorInstance';
 import { useEditorStore } from '../stores/editor';
+import { isImageFile } from '../stores/editor';
 
 type DroppedFile = File & { path?: string };
 type DroppedDirectoryItem = DataTransferItem & {
@@ -110,7 +111,12 @@ export function useFileSystem() {
     error.value = null;
     try {
       const client = getClient();
-      const content = await client.readFile(filePath);
+      let content: string;
+      if (isImageFile(filePath) && client.readBinaryFile) {
+        content = await client.readBinaryFile(filePath);
+      } else {
+        content = await client.readFile(filePath);
+      }
       store.openFile(filePath, content);
     } catch (e: any) {
       error.value = e.message;

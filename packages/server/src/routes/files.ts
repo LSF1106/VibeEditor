@@ -5,6 +5,21 @@ import type { FileEntry } from '@vibeeditor/core';
 
 const router = Router();
 
+function getMimeType(ext: string): string {
+  const mimeMap: Record<string, string> = {
+    png: 'image/png',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    gif: 'image/gif',
+    svg: 'image/svg+xml',
+    webp: 'image/webp',
+    bmp: 'image/bmp',
+    ico: 'image/x-icon',
+    tiff: 'image/tiff',
+  };
+  return mimeMap[ext] || 'application/octet-stream';
+}
+
 function resolveRoot(root?: string): string {
   return path.resolve(root || process.cwd());
 }
@@ -65,8 +80,18 @@ router.get('/read', async (req: Request, res: Response) => {
     if (!filePath) return res.status(400).json({ error: 'path required' });
 
     const absPath = getSafePath(root, filePath);
-    const content = await fs.readFile(absPath, 'utf-8');
-    res.json({ path: filePath, content });
+    const binary = req.query.binary === 'true';
+
+    if (binary) {
+      const buf = await fs.readFile(absPath);
+      const ext = path.extname(absPath).toLowerCase().replace('.', '');
+      const mime = getMimeType(ext);
+      const base64 = buf.toString('base64');
+      res.json({ path: filePath, content: `data:${mime};base64,${base64}` });
+    } else {
+      const content = await fs.readFile(absPath, 'utf-8');
+      res.json({ path: filePath, content });
+    }
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }

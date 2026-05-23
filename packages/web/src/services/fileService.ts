@@ -1,5 +1,9 @@
 import type { FileEntry } from '@vibeeditor/core';
 
+const IMAGE_EXTENSIONS = new Set([
+  'png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp', 'ico', 'tiff',
+]);
+
 /**
  * 文件服务客户端接口 —— 对 @vibeeditor/core 的 IFileSystem 的扩展
  *
@@ -9,6 +13,7 @@ import type { FileEntry } from '@vibeeditor/core';
 export interface FileServiceClient {
   rootName?: string;
   readFile(path: string): Promise<string>;
+  readBinaryFile?(path: string): Promise<string>;
   writeFile(path: string, content: string): Promise<void>;
   deleteFile(path: string): Promise<void>;
   readDir(path: string): Promise<FileEntry[]>;
@@ -53,6 +58,7 @@ export function createElectronClient(): FileServiceClient {
   const api = window.electronAPI!;
   return {
     readFile: (path) => api.readFile(path),
+    readBinaryFile: (path) => api.readBinaryFile(path),
     writeFile: (path, content) => api.writeFile(path, content),
     deleteFile: (path) => api.deleteFile(path),
     readDir: (path) => api.readDir(path) as Promise<FileEntry[]>,
@@ -82,6 +88,10 @@ export function createServerClient(baseUrl = ''): FileServiceClient {
   return {
     readFile: async (path) => {
       const data = await request<{ content: string }>(`/api/files/read?path=${encodeURIComponent(path)}`);
+      return data.content;
+    },
+    readBinaryFile: async (path) => {
+      const data = await request<{ content: string }>(`/api/files/read?path=${encodeURIComponent(path)}&binary=true`);
       return data.content;
     },
     writeFile: async (path, content) => {
@@ -225,6 +235,20 @@ export function createBrowserLocalClient(rootHandle: FileSystemDirectoryHandle):
       if (!handle || handle.kind !== 'file') throw new Error(`File not found: ${filePath}`);
       const file = await (handle as FileSystemFileHandle).getFile();
       return file.text();
+    },
+
+    readBinaryFile: async (filePath: string) => {
+      const handle = await resolvePathFromHandle(rootHandle, normPath(filePath));
+      if (!handle || handle.kind !== 'file') throw new Error(`File not found: ${filePath}`);
+      const file = await (handle as FileSystemFileHandle).getFile();
+      const buffer = await file.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      let binary = '';
+      for (let i = 0; i < bytes.length; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      const base64 = btoa(binary);
+      return `data:${file.type || 'image/png'};base64,${base64}`;
     },
 
     writeFile: async (filePath: string, content: string) => {
@@ -408,6 +432,16 @@ export async function pickLocalFile(): Promise<{ path: string; content: string }
   try {
     const [fileHandle] = await showOpenFilePicker({ multiple: false });
     const file = await fileHandle.getFile();
+    if (IMAGE_EXTENSIONS.has(file.name.split('.').pop()?.toLowerCase() || '')) {
+      const buffer = await file.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      let binary = '';
+      for (let i = 0; i < bytes.length; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      const base64 = btoa(binary);
+      return { path: file.name, content: `data:${file.type || 'image/png'};base64,${base64}` };
+    }
     return { path: file.name, content: await file.text() };
   } catch {
     return null;
