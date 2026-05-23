@@ -37,18 +37,10 @@ export function registerFileHandlers(ipcMain: IpcMain, dialog: Dialog) {
     return fs.readFile(p, 'utf-8');
   });
 
-  ipcMain.handle('file:readBinary', async (_e, filePath: string) => {
+  ipcMain.handle('file:readBuffer', async (_e, filePath: string) => {
     const p = resolvePath(filePath);
-    const buf = await fs.readFile(p);
-    const ext = path.extname(p).toLowerCase().replace('.', '');
-    const mimeMap: Record<string, string> = {
-      png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
-      gif: 'image/gif', svg: 'image/svg+xml', webp: 'image/webp',
-      bmp: 'image/bmp', ico: 'image/x-icon', tiff: 'image/tiff',
-    };
-    const mime = mimeMap[ext] || 'application/octet-stream';
-    const base64 = buf.toString('base64');
-    return `data:${mime};base64,${base64}`;
+    const buffer = await fs.readFile(p);
+    return buffer.toString('base64');
   });
 
   ipcMain.handle('file:write', async (_e, filePath: string, content: string) => {
@@ -134,9 +126,7 @@ export function registerFileHandlers(ipcMain: IpcMain, dialog: Dialog) {
       filters: [{ name: 'All Files', extensions: ['*'] }],
     });
     if (result.canceled || result.filePaths.length === 0) return null;
-    const filePath = result.filePaths[0];
-    const content = await fs.readFile(filePath, 'utf-8');
-    return { path: filePath, content };
+    return { path: result.filePaths[0] };
   });
 
   ipcMain.handle('dialog:saveFile', async (_e, filePath: string, content: string) => {

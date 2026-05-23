@@ -85,17 +85,22 @@
         </div>
         <div class="editor-container">
           <ImageViewer
-            v-if="store.activeTab && store.activeTab.type === 'image'"
+            v-if="store.activeTab && store.activeTab.viewMode === 'image'"
             :key="store.activeTab.id"
             :src="store.activeTab.content"
             :filename="store.activeTab.name"
           />
           <MonacoEditor
-            v-else-if="store.activeTab"
+            v-else-if="store.activeTab && store.activeTab.viewMode === 'code'"
             :key="store.activeTab.id"
             :content="store.activeTab.content"
             :language="store.activeTab.language"
             @content-change="(c: string) => store.updateContent(store.activeTab!.id, c)"
+          />
+          <DocxViewer
+            v-else-if="store.activeTab && store.activeTab.viewMode === 'docx'"
+            :content="store.activeTab.content"
+            :file-name="store.activeTab.name"
           />
           <div v-else class="editor-placeholder">
             <div class="placeholder-content">
@@ -168,6 +173,7 @@ import FileTree from '../file-tree/FileTree.vue';
 import SearchPanel from '../SearchPanel.vue';
 import MonacoEditor from '../editor/MonacoEditor.vue';
 import ImageViewer from '../editor/ImageViewer.vue';
+import DocxViewer from '../editor/DocxViewer.vue';
 import AgentPanel from '../agent/AgentPanel.vue';
 import SaveDialog from '../SaveDialog.vue';
 import StatusBar from '../StatusBar.vue';

@@ -97,6 +97,20 @@ router.get('/read', async (req: Request, res: Response) => {
   }
 });
 
+router.get('/read-buffer', async (req: Request, res: Response) => {
+  try {
+    const root = resolveRoot(req.query.root as string | undefined);
+    const filePath = req.query.path as string;
+    if (!filePath) return res.status(400).json({ error: 'path required' });
+
+    const absPath = getSafePath(root, filePath);
+    const buffer = await fs.readFile(absPath);
+    res.json({ path: filePath, data: buffer.toString('base64') });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
 router.post('/write', async (req: Request, res: Response) => {
   try {
     const root = resolveRoot(req.body.root as string | undefined);

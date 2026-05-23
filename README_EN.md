@@ -18,7 +18,7 @@ AI-powered code editor built with **Monaco Editor** + **Vue 3**, supporting both
 | 4 | Open folder (file tree) | ✅ | Electron `showOpenDialog` + Server `/api/files/list` working; browser side incomplete |
 | 5 | Save file (Ctrl+S) | ✅ | Electron IPC + Server API both implemented |
 | 6 | New untitled file | ✅ | `store.newUntitled()` |
-| 7 | Keyboard shortcuts | ⚠️ | Ctrl+S, Ctrl+C, Ctrl+V (custom copy/paste) bound; Electron menu shortcut IPC bridge ready but unused; full shortcut system missing |
+| 7 | Keyboard shortcuts | ⚠️ | Copy (Ctrl+C), Paste (Ctrl+V), Cut (Ctrl+X), Undo (Ctrl+Z), Redo (Ctrl+Y), Find (Ctrl+F), Replace (Ctrl+H) bound; Electron menu shortcut IPC bridge ready but unused; full shortcut system missing |
 
 ### P1 — AI Agent Assisted Editing
 
@@ -26,7 +26,7 @@ AI-powered code editor built with **Monaco Editor** + **Vue 3**, supporting both
 |---|---------|--------|-------|
 | 8 | Agent chat panel | ✅ | `AgentPanel.vue`, supports chat/edit/agent modes, Markdown + KaTeX rendering, multi-provider config management |
 | 9 | Agent streaming response (SSE) | ✅ | Server SSE + frontend stream parsing fully working with real LLM backend |
-| 10 | Agent generates edits and applies to files | ⚠️ | `<edit>` tag parsing → file writing pipeline works end-to-end; but edit/agent mode system prompt hardcoded to `chat` in `@vibeeditor/agent` `provider.ts` (bug); `executor.ts` not wired |
+| 10 | Agent generates edits and applies to files | ⚠️ | `<edit>` tag parsing → file writing pipeline works end-to-end; `/api/agent/apply-edits` endpoint exists on server but `executor.ts` from `@vibeeditor/agent` not wired to frontend; edit/agent mode system prompt hardcoded to `chat` in `@vibeeditor/agent` `provider.ts` (bug) |
 | 11 | Agent context builder (open files + cursor + selection) | ✅ | `@vibeeditor/agent` — `buildContextPrompt()` implemented; frontend `useAgent.ts` does not populate `openFiles`/`fileTree` context in requests |
 | 12 | Edit undo / redo | ⚠️ | `@vibeeditor/agent` — `revertEdits()` implemented; not wired to frontend UI |
 | 13 | LLM backend integration (OpenAI / Anthropic / etc.) | ⚠️ | OpenAI-compatible API via raw fetch (works with Ollama, vLLM, etc.); no SDK dependencies; edit/agent mode system prompt bug (#10) needs fix |
@@ -39,9 +39,9 @@ AI-powered code editor built with **Monaco Editor** + **Vue 3**, supporting both
 | 15 | Runtime environment auto-detection | ✅ | `fileService.ts` → detect Electron / Server / Browser |
 | 16 | File / folder rename | ✅ | Backend API implemented; frontend context menu UI not done |
 | 17 | File / folder delete | ✅ | Backend API implemented; frontend context menu UI not done |
-| 18 | New file / folder creation | ⚠️ | Server + Electron API implemented; frontend only has "+ New" button (creates untitled tab, prompts Save dialog on save) |
+| 18 | New file / folder creation | ✅ | Server + Electron API implemented; integrated into File menu dropdown with Ctrl+N keyboard shortcut |
 | 19 | File watching / auto-refresh | ⚠️ | `IFileSystem.watch()` defined, `LocalFileSystem` implemented; server has `chokidar` dependency but push not active; frontend not consuming |
-| 20 | Drag and drop files to open | ❌ | |
+| 20 | Drag and drop files to open | ✅ | `MainLayout.vue` with visual drop overlay; supports both Electron (native paths) and browser (FileSystemDirectoryHandle) |
 | 21 | Recent projects / files list | ❌ | |
 | 22 | Workspace persistence (remember last opened folder) | ❌ | Pinia store is in-memory only, lost on refresh (only LLM provider configs persist to localStorage) |
 
@@ -49,7 +49,7 @@ AI-powered code editor built with **Monaco Editor** + **Vue 3**, supporting both
 
 | # | Feature | Status | Notes |
 |---|---------|--------|-------|
-| 23 | Find / replace (single file) | ❌ | Monaco built-in Find widget available, but not custom-integrated |
+| 23 | Find / replace (single file) | ⚠️ | Monaco built-in Find (Ctrl+F) and Replace (Ctrl+H) available; no custom widget or integration beyond native Monaco actions |
 | 24 | Cross-file search (project-wide) | ❌ | |
 | 25 | Diff view | ❌ | Monaco built-in diff editor, not wrapped |
 | 26 | Code folding / outline | ✅ | Supported natively by Monaco |
@@ -92,9 +92,9 @@ AI-powered code editor built with **Monaco Editor** + **Vue 3**, supporting both
 
 | Status | Count |
 |--------|-------|
-| ✅ Done | 19 |
+| ✅ Done | 21 |
 | ⚠️ Scaffold ready | 11 |
-| ❌ Not started | 20 |
+| ❌ Not started | 18 |
 | **Total** | **50** |
 
 ## Architecture Docs
@@ -339,10 +339,10 @@ classDiagram
 # Install dependencies
 npm install
 
-# Start server + web frontend simultaneously (auto-builds @vibeeditor/core)
+# Start server + web frontend simultaneously (auto-builds @vibeeditor/agent + @vibeeditor/core)
 npm run dev:all
 
-# Or start individually (each auto-builds @vibeeditor/core)
+# Or start individually (each auto-builds @vibeeditor/agent + @vibeeditor/core)
 npm run dev:server   # Backend on http://localhost:3456
 npm run dev:web      # Frontend on http://localhost:5173
 npm run dev:electron # Electron desktop (auto-starts Vite frontend + Electron window)
@@ -352,7 +352,7 @@ npm run dev:electron # Electron desktop (auto-starts Vite frontend + Electron wi
 
 | Mode | File System | Command |
 |------|------------|---------|
-| **Electron** desktop | Local FS via IPC (`Node.js fs`) | `npm run dev:electron` (auto-starts Vite + Electron, auto-builds core & electron) |
+| **Electron** desktop | Local FS via IPC (`Node.js fs`) | `npm run dev:electron` (auto-starts Vite + Electron, auto-builds agent, core & electron) |
 | **Server** (remote files) | Server FS via REST API | `npm run dev:server` + `npm run dev:web` |
 | **Browser** (local files) | File System Access API | `npm run dev:web` |
 
@@ -366,7 +366,7 @@ npm run build:core      # Build shared core
 npm run build:server    # Build Express backend
 npm run build:web       # Build Vue frontend (to packages/web/dist/)
 npm run build:electron  # Build Electron main process
-npm run build:all       # Build everything
+npm run build:all       # Build everything (agent → core → web → server → electron)
 ```
 
 ## Server API
@@ -384,6 +384,7 @@ npm run build:all       # Build everything
 | POST | `/api/files/rename` | Rename `{ oldPath, newPath }` |
 | POST | `/api/agent/chat` | Send message to agent |
 | POST | `/api/agent/stream` | Stream agent response (SSE) |
+| POST | `/api/agent/apply-edits` | Apply AI-generated edits to files |
 | GET | `/api/health` | Health check |
 
 ## Project Structure

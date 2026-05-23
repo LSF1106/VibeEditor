@@ -14,6 +14,7 @@
     "@vibeeditor/agent": "0.1.0",
     "@vibeeditor/core": "0.1.0",
     "katex": "^0.16.46",
+    "docx-preview": "^0.3.7",
     "markdown-it": "^14.1.1",
     "markdown-it-texmath": "^1.0.0",
     "monaco-editor": "^0.45.0",
