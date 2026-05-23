@@ -143,6 +143,9 @@ export function useFileSystem() {
       } else if (viewMode === 'docx') {
         const buffer = await client.readFileBuffer(filePath);
         store.openFile(filePath, arrayBufferToBase64(buffer));
+      } else if (viewMode === 'excel') {
+        const buffer = await client.readFileBuffer(filePath);
+        store.openFile(filePath, arrayBufferToBase64(buffer));
       } else if (ext === 'doc') {
         store.openFile(filePath, '');
       } else {
@@ -296,6 +299,9 @@ export function useFileSystem() {
         const mime = getMimeType(ext);
         store.openFile(result.path, arrayBufferToDataUrl(buffer, mime));
       } else if (viewMode === 'docx') {
+        const buffer = await result.file.arrayBuffer();
+        store.openFile(result.path, arrayBufferToBase64(buffer));
+      } else if (viewMode === 'excel') {
         const buffer = await result.file.arrayBuffer();
         store.openFile(result.path, arrayBufferToBase64(buffer));
       } else if (ext === 'doc') {
