@@ -9,8 +9,7 @@ import {
   type FileServiceClient,
 } from '../services/fileService';
 import { getEditorInstance } from '../services/editorInstance';
-import { useEditorStore } from '../stores/editor';
-import { isImageFile } from '../stores/editor';
+import { useEditorStore, getViewModeFromPath } from '../stores/editor';
 
 type DroppedFile = File & { path?: string };
 type DroppedDirectoryItem = DataTransferItem & {
@@ -105,19 +104,60 @@ export function useFileSystem() {
     }
   }
 
+  /** ArrayBuffer → base64 字符串 */
+  function arrayBufferToBase64(buffer: ArrayBuffer): string {
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
+  }
+
+  function getMimeType(ext: string): string {
+    const mimeMap: Record<string, string> = {
+      png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+      gif: 'image/gif', svg: 'image/svg+xml', webp: 'image/webp',
+      bmp: 'image/bmp', ico: 'image/x-icon', tiff: 'image/tiff',
+    };
+    return mimeMap[ext] || 'application/octet-stream';
+  }
+
+  function arrayBufferToDataUrl(buffer: ArrayBuffer, mime: string): string {
+    return `data:${mime};base64,${arrayBufferToBase64(buffer)}`;
+  }
+
   /** 读取文件并在编辑器中打开为标签页 */
   async function openAndReadFile(filePath: string) {
     isLoading.value = true;
     error.value = null;
     try {
       const client = getClient();
-      let content: string;
-      if (isImageFile(filePath) && client.readBinaryFile) {
-        content = await client.readBinaryFile(filePath);
+      const ext = filePath.split('.').pop()?.toLowerCase() || '';
+      const viewMode = getViewModeFromPath(filePath);
+
+      if (viewMode === 'image') {
+        const buffer = await client.readFileBuffer(filePath);
+        const mime = getMimeType(ext);
+        store.openFile(filePath, arrayBufferToDataUrl(buffer, mime));
+      } else if (viewMode === 'docx') {
+        const buffer = await client.readFileBuffer(filePath);
+        store.openFile(filePath, arrayBufferToBase64(buffer));
+      } else if (viewMode === 'excel') {
+        const buffer = await client.readFileBuffer(filePath);
+        store.openFile(filePath, arrayBufferToBase64(buffer));
+      } else if (viewMode === 'pptx') {
+        const buffer = await client.readFileBuffer(filePath);
+        store.openFile(filePath, arrayBufferToBase64(buffer));
+      } else if (viewMode === 'pdf') {
+        const buffer = await client.readFileBuffer(filePath);
+        store.openFile(filePath, arrayBufferToBase64(buffer));
+      } else if (ext === 'doc') {
+        store.openFile(filePath, '');
       } else {
-        content = await client.readFile(filePath);
+        const content = await client.readFile(filePath);
+        store.openFile(filePath, content);
       }
-      store.openFile(filePath, content);
     } catch (e: any) {
       error.value = e.message;
     } finally {
@@ -129,6 +169,10 @@ export function useFileSystem() {
   async function saveCurrentFile() {
     const tab = store.activeTab;
     if (!tab) return;
+    if (tab.viewMode !== 'code') {
+      error.value = 'Cannot save document previews';
+      return;
+    }
     error.value = null;
     try {
       const client = getClient();
@@ -252,8 +296,31 @@ export function useFileSystem() {
     error.value = null;
     try {
       const result = await pickLocalFile();
-      if (result) {
-        store.openFile(result.path, result.content);
+      if (!result) return;
+      const ext = result.path.split('.').pop()?.toLowerCase() || '';
+      const viewMode = getViewModeFromPath(result.path);
+
+      if (viewMode === 'image') {
+        const buffer = await result.file.arrayBuffer();
+        const mime = getMimeType(ext);
+        store.openFile(result.path, arrayBufferToDataUrl(buffer, mime));
+      } else if (viewMode === 'docx') {
+        const buffer = await result.file.arrayBuffer();
+        store.openFile(result.path, arrayBufferToBase64(buffer));
+      } else if (viewMode === 'excel') {
+        const buffer = await result.file.arrayBuffer();
+        store.openFile(result.path, arrayBufferToBase64(buffer));
+      } else if (viewMode === 'pptx') {
+        const buffer = await result.file.arrayBuffer();
+        store.openFile(result.path, arrayBufferToBase64(buffer));
+      } else if (viewMode === 'pdf') {
+        const buffer = await result.file.arrayBuffer();
+        store.openFile(result.path, arrayBufferToBase64(buffer));
+      } else if (ext === 'doc') {
+        store.openFile(result.path, '');
+      } else {
+        const text = await result.file.text();
+        store.openFile(result.path, text);
       }
     } catch (e: any) {
       error.value = e.message;
@@ -355,7 +422,7 @@ export function useFileSystem() {
       const client = getClient();
       const result = await client.openFile();
       if (result) {
-        store.openFile(result.path, result.content);
+        await openAndReadFile(result.path);
       }
     } else if (env === 'browser') {
       await openLocalFile();

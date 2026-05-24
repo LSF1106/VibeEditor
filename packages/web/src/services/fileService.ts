@@ -1,9 +1,5 @@
 import type { FileEntry } from '@vibeeditor/core';
 
-const IMAGE_EXTENSIONS = new Set([
-  'png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp', 'ico', 'tiff',
-]);
-
 /**
  * 文件服务客户端接口 —— 对 @vibeeditor/core 的 IFileSystem 的扩展
  *
@@ -13,7 +9,7 @@ const IMAGE_EXTENSIONS = new Set([
 export interface FileServiceClient {
   rootName?: string;
   readFile(path: string): Promise<string>;
-  readBinaryFile?(path: string): Promise<string>;
+  readFileBuffer(path: string): Promise<ArrayBuffer>;
   writeFile(path: string, content: string): Promise<void>;
   deleteFile(path: string): Promise<void>;
   readDir(path: string): Promise<FileEntry[]>;
@@ -24,7 +20,7 @@ export interface FileServiceClient {
   rename(oldPath: string, newPath: string): Promise<void>;
   openFolderPath?(path: string): Promise<string | null>;
   openFolder(): Promise<string | null>;
-  openFile(): Promise<{ path: string; content: string } | null>;
+  openFile(): Promise<{ path: string } | null>;
   saveFileAs?(path: string, content: string): Promise<string | null>;
 }
 
@@ -58,7 +54,15 @@ export function createElectronClient(): FileServiceClient {
   const api = window.electronAPI!;
   return {
     readFile: (path) => api.readFile(path),
-    readBinaryFile: (path) => api.readBinaryFile(path),
+    readFileBuffer: async (path) => {
+      const b64 = await api.readFileBuffer(path);
+      const binary = atob(b64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      return bytes.buffer;
+    },
     writeFile: (path, content) => api.writeFile(path, content),
     deleteFile: (path) => api.deleteFile(path),
     readDir: (path) => api.readDir(path) as Promise<FileEntry[]>,
@@ -90,9 +94,16 @@ export function createServerClient(baseUrl = ''): FileServiceClient {
       const data = await request<{ content: string }>(`/api/files/read?path=${encodeURIComponent(path)}`);
       return data.content;
     },
-    readBinaryFile: async (path) => {
-      const data = await request<{ content: string }>(`/api/files/read?path=${encodeURIComponent(path)}&binary=true`);
-      return data.content;
+    readFileBuffer: async (path) => {
+      const data = await request<{ path: string; data: string }>(
+        `/api/files/read-buffer?path=${encodeURIComponent(path)}`
+      );
+      const binary = atob(data.data);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      return bytes.buffer;
     },
     writeFile: async (path, content) => {
       await request('/api/files/write', {
@@ -237,18 +248,11 @@ export function createBrowserLocalClient(rootHandle: FileSystemDirectoryHandle):
       return file.text();
     },
 
-    readBinaryFile: async (filePath: string) => {
+    readFileBuffer: async (filePath: string) => {
       const handle = await resolvePathFromHandle(rootHandle, normPath(filePath));
       if (!handle || handle.kind !== 'file') throw new Error(`File not found: ${filePath}`);
       const file = await (handle as FileSystemFileHandle).getFile();
-      const buffer = await file.arrayBuffer();
-      const bytes = new Uint8Array(buffer);
-      let binary = '';
-      for (let i = 0; i < bytes.length; i++) {
-        binary += String.fromCharCode(bytes[i]);
-      }
-      const base64 = btoa(binary);
-      return `data:${file.type || 'image/png'};base64,${base64}`;
+      return file.arrayBuffer();
     },
 
     writeFile: async (filePath: string, content: string) => {
@@ -427,22 +431,12 @@ export async function pickLocalFolder(): Promise<FileServiceClient | null> {
   }
 }
 
-/** 打开浏览器原生文件选择器，返回文件路径和内容 */
-export async function pickLocalFile(): Promise<{ path: string; content: string } | null> {
+/** 打开浏览器原生文件选择器，返回文件路径和 File 对象 */
+export async function pickLocalFile(): Promise<{ path: string; file: File } | null> {
   try {
     const [fileHandle] = await showOpenFilePicker({ multiple: false });
     const file = await fileHandle.getFile();
-    if (IMAGE_EXTENSIONS.has(file.name.split('.').pop()?.toLowerCase() || '')) {
-      const buffer = await file.arrayBuffer();
-      const bytes = new Uint8Array(buffer);
-      let binary = '';
-      for (let i = 0; i < bytes.length; i++) {
-        binary += String.fromCharCode(bytes[i]);
-      }
-      const base64 = btoa(binary);
-      return { path: file.name, content: `data:${file.type || 'image/png'};base64,${base64}` };
-    }
-    return { path: file.name, content: await file.text() };
+    return { path: file.name, file };
   } catch {
     return null;
   }

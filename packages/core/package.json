@@ -17,9 +17,7 @@
     "build": "tsc",
     "dev": "tsc --watch"
   },
-  "dependencies": {
-    "@vibeeditor/agent": "0.1.0"
-  },
+  "dependencies": {},
   "devDependencies": {
     "typescript": "^5.3.3"
   }

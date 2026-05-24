@@ -26,7 +26,7 @@
 |---|------|------|------|
 | 8 | Agent 对话面板 | ✅ | `AgentPanel.vue`, 支持 chat/edit/agent 三种模式、Markdown + KaTeX 渲染、多 Provider 配置管理 |
 | 9 | Agent 消息流式输出 (SSE) | ✅ | Server SSE + 前端 stream 解析已完整打通; 支持真实 LLM 流式响应 |
-| 10 | Agent 生成编辑操作并应用到文件 | ⚠️ | `<edit>` 区块解析 → 文件写入流程已打通; 但编辑/Agent 模式的 system prompt 在 `@vibeeditor/agent` 的 `provider.ts` 中被硬编码为 `chat` 模式 (Bug); `executor.ts` 未接入 |
+| 10 | Agent 生成编辑操作并应用到文件 | ⚠️ | `<edit>` 区块解析 → 文件写入流程已打通; 服务端 `/api/agent/apply-edits` 端点已实现但前端未调用 `executor.ts`; 编辑/Agent 模式的 system prompt 在 `@vibeeditor/agent` 的 `provider.ts` 中被硬编码为 `chat` 模式 (Bug) |
 | 11 | Agent 上下文构建 (打开文件+光标+选区) | ✅ | `@vibeeditor/agent` — `buildContextPrompt()` 已实现; 但前端 `useAgent.ts` 未填充 `openFiles`, `fileTree` 等上下文到请求中 |
 | 12 | 编辑操作撤销/重做 | ⚠️ | `@vibeeditor/agent` — `revertEdits()` 已实现; 前端未接入 UI |
 | 13 | LLM 后端对接 (OpenAI / Anthropic / etc.) | ⚠️ | 已通过 raw fetch 对接 OpenAI 兼容 API (支持 Ollama / vLLM 等); 无 SDK 依赖; 编辑/Agent 模式 system prompt 硬编码 bug (#10) 待修复 |
@@ -49,7 +49,7 @@
 
 | # | 功能 | 状态 | 说明 |
 |---|------|------|------|
-| 23 | 搜索 / 替换 (单文件) | ✅️ | Monaco 内置 Find 控件可用 |
+| 23 | 搜索 / 替换 (单文件) | ⚠️ | Monaco 内置 Find (Ctrl+F) 和 Replace (Ctrl+H) 可用; 无自定义组件或集成 |
 | 24 | 跨文件搜索 (项目级) | ❌ | |
 | 25 | Diff 对比视图 | ❌ | Monaco 内置 diff editor, 未封装 |
 | 26 | 代码折叠 / 大纲 | ✅ | 由 Monaco 原生支持 |
@@ -92,9 +92,9 @@
 
 | 状态 | 数量 |
 |------|------|
-| ✅ 已完成 | 19 |
+| ✅ 已完成 | 21 |
 | ⚠️ 框架就绪 | 11 |
-| ❌ 未开始 | 20 |
+| ❌ 未开始 | 18 |
 | **合计** | **50** |
 
 ## 架构文档
@@ -339,10 +339,10 @@ classDiagram
 # 安装依赖
 npm install
 
-# 同时启动服务器和前端（自动构建 @vibeeditor/core）
+# 同时启动服务器和前端（自动构建 @vibeeditor/agent + @vibeeditor/core）
 npm run dev:all
 
-# 或分别启动（均会自动构建 @vibeeditor/core）
+# 或分别启动（均会自动构建 @vibeeditor/agent + @vibeeditor/core）
 npm run dev:server   # 后端运行在 http://localhost:3456
 npm run dev:web      # 前端运行在 http://localhost:5173
 npm run dev:electron # Electron 桌面端（自动启动 Vite 前端 + Electron 窗口）
@@ -352,7 +352,7 @@ npm run dev:electron # Electron 桌面端（自动启动 Vite 前端 + Electron 
 
 | 模式 | 文件系统 | 启动命令 |
 |------|---------|---------|
-| **Electron** 桌面端 | 本地 FS, 通过 IPC (`Node.js fs`) | `npm run dev:electron`（自动启动 Vite + Electron，自动构建 core 和 electron） |
+| **Electron** 桌面端 | 本地 FS, 通过 IPC (`Node.js fs`) | `npm run dev:electron`（自动启动 Vite + Electron，自动构建 agent、core 和 electron） |
 | **Server** 部署 (远程文件) | Server FS, 通过 REST API | `npm run dev:server` + `npm run dev:web` |
 | **Browser** 本地文件 | File System Access API | `npm run dev:web` |
 
@@ -384,6 +384,7 @@ npm run build:all       # 构建所有包 (agent → core → web → server →
 | POST | `/api/files/rename` | 重命名 `{ oldPath, newPath }` |
 | POST | `/api/agent/chat` | 发送消息给 Agent |
 | POST | `/api/agent/stream` | 流式返回 Agent 响应 (SSE) |
+| POST | `/api/agent/apply-edits` | 应用 AI 生成的编辑操作到文件 |
 | GET | `/api/health` | 健康检查 |
 
 ## 项目结构

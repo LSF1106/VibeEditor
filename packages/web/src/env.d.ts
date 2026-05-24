@@ -12,7 +12,7 @@ declare module '*.vue' {
 interface Window {
   electronAPI?: {
     readFile: (path: string) => Promise<string>;
-    readBinaryFile: (path: string) => Promise<string>;
+    readFileBuffer: (path: string) => Promise<string>;
     writeFile: (path: string, content: string) => Promise<void>;
     readDir: (path: string) => Promise<unknown[]>;
     exists: (path: string) => Promise<boolean>;
@@ -23,7 +23,7 @@ interface Window {
     rename: (oldPath: string, newPath: string) => Promise<void>;
     openFolderPath: (path: string) => Promise<string | null>;
     openFolder: () => Promise<string | null>;
-    openFile: () => Promise<{ path: string; content: string } | null>;
+    openFile: () => Promise<{ path: string } | null>;
     saveFile: (path: string, content: string) => Promise<string | null>;
     onMenuAction: (callback: (action: string) => void) => void;
   };
