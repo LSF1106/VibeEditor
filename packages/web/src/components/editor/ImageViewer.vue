@@ -41,7 +41,7 @@ const error = ref('');
 
 const imageStyle = computed(() => ({
   transform: `translate(${panX.value}px, ${panY.value}px) scale(${scale.value})`,
-  cursor: isPanning.value ? 'grabbing' : scale.value > 1 ? 'grab' : 'default',
+  cursor: isPanning.value ? 'grabbing' : 'grab',
 }));
 
 const imageInfo = computed(() => {
@@ -89,7 +89,6 @@ function handleWheel(e: WheelEvent) {
 }
 
 function handleMouseDown(e: MouseEvent) {
-  if (scale.value <= 1) return;
   isPanning.value = true;
   panStart.x = e.clientX - panX.value;
   panStart.y = e.clientY - panY.value;
