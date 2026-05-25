@@ -51,7 +51,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick } from 'vue';
-import type { FileServiceClient } from '../../services/fileService';
+import type { FileServiceClient } from '../services/fileService';
 
 interface SearchResult {
   path: string;

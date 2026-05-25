@@ -117,6 +117,20 @@
             :content="store.activeTab.content"
             :file-name="store.activeTab.name"
           />
+          <HtmlViewer
+            v-else-if="store.activeTab && store.activeTab.viewMode === 'html'"
+            :key="store.activeTab.id"
+            :content="store.activeTab.content"
+            :language="store.activeTab.language"
+            @content-change="(c: string) => store.updateContent(store.activeTab!.id, c)"
+          />
+          <MarkdownViewer
+            v-else-if="store.activeTab && store.activeTab.viewMode === 'markdown'"
+            :key="store.activeTab.id"
+            :content="store.activeTab.content"
+            :language="store.activeTab.language"
+            @content-change="(c: string) => store.updateContent(store.activeTab!.id, c)"
+          />
           <div v-else class="editor-placeholder">
             <div class="placeholder-content">
               <p class="placeholder-title">VibeEditor</p>
@@ -192,6 +206,8 @@ import DocxViewer from '../editor/DocxViewer.vue';
 import ExcelViewer from '../editor/ExcelViewer.vue';
 import PptxViewer from '../editor/PptxViewer.vue';
 import PdfViewer from '../editor/PdfViewer.vue';
+import HtmlViewer from '../editor/HtmlViewer.vue';
+import MarkdownViewer from '../editor/MarkdownViewer.vue';
 import AgentPanel from '../agent/AgentPanel.vue';
 import SaveDialog from '../SaveDialog.vue';
 import StatusBar from '../StatusBar.vue';

@@ -7,6 +7,10 @@ declare module '*.vue' {
   export default component;
 }
 
+declare module 'docx-preview';
+declare module '@vue-office/excel';
+declare module '@vue-office/pptx';
+
 // Electron 环境下的 IPC API 类型声明
 // Electron 主进程通过 preload 脚本将这些方法挂载到 window.electronAPI
 interface Window {
