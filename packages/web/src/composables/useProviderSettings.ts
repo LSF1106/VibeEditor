@@ -1,4 +1,5 @@
 import { ref, watch } from 'vue';
+import { i18n } from '../locales';
 
 /** 单个 LLM 提供商配置 */
 export interface ProviderConfig {
@@ -181,5 +182,5 @@ export async function fetchAvailableModels(apiUrl: string, apiKey: string): Prom
     }
   } catch { /* 忽略 */ }
 
-  throw new Error('无法从该地址获取模型列表');
+  throw new Error(i18n.global.t('providerPreset.fetchFailed'));
 }

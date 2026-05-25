@@ -1,7 +1,7 @@
 <template>
   <div class="save-dialog-overlay" @click.self="$emit('cancel')">
     <div class="save-dialog">
-      <h3 class="save-dialog-title">Save File As</h3>
+      <h3 class="save-dialog-title">{{ $t('saveDialog.title') }}</h3>
       <div class="save-dialog-path">{{ displayPath }}</div>
       <div class="save-dialog-dirs">
         <div
@@ -9,7 +9,7 @@
           class="save-dir-entry"
           @click="goUp"
         >
-          <span class="dir-icon">📁</span> ..
+          <span class="dir-icon">📁</span> {{ $t('saveDialog.goUp') }}
         </div>
         <div
           v-for="entry in subDirs"
@@ -20,7 +20,7 @@
           <span class="dir-icon">📁</span> {{ entry.name }}
         </div>
         <div v-if="subDirs.length === 0 && currentDir === '.' && !loading" class="save-dir-empty">
-          No directories
+          {{ $t('saveDialog.noDirectories') }}
         </div>
       </div>
       <div class="save-dialog-input">
@@ -28,13 +28,13 @@
           ref="filenameInput"
           v-model="filename"
           type="text"
-          placeholder="filename.ext"
+          :placeholder="$t('saveDialog.filenamePlaceholder')"
           @keyup.enter="confirm"
         />
       </div>
       <div class="save-dialog-actions">
-        <button class="save-btn save-btn-cancel" @click="$emit('cancel')">Cancel</button>
-        <button class="save-btn save-btn-confirm" @click="confirm">Save</button>
+        <button class="save-btn save-btn-cancel" @click="$emit('cancel')">{{ $t('saveDialog.cancel') }}</button>
+        <button class="save-btn save-btn-confirm" @click="confirm">{{ $t('saveDialog.save') }}</button>
       </div>
     </div>
   </div>
@@ -64,7 +64,7 @@ const filenameInput = ref<HTMLInputElement>();
 /** 当前完整路径的预览 */
 const displayPath = computed(() => {
   const root = props.workspaceRoot || '/';
-  return root.replace(/\/$/, '') + '/' + (currentDir.value === '.' ? '' : currentDir.value + '/') + (filename.value || '(filename)');
+  return root.replace(/\/$/, '') + '/' + (currentDir.value === '.' ? '' : currentDir.value + '/') + (filename.value || filename.value);
 });
 
 async function loadDirs(dir: string) {

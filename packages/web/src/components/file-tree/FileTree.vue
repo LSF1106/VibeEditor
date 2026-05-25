@@ -2,9 +2,9 @@
   <div class="file-tree">
     <div class="tree-body">
       <div v-if="nodes.length === 0 && !loading" class="tree-empty">
-        No files open
+        {{ $t('fileTree.noFiles') }}
       </div>
-      <div v-if="loading" class="tree-loading">Loading...</div>
+      <div v-if="loading" class="tree-loading">{{ $t('fileTree.loading') }}</div>
       <TreeNode
         v-for="node in nodes"
         :key="node.path"

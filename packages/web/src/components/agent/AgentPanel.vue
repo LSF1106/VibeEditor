@@ -8,12 +8,12 @@
     <!-- 无提供商时的引导页面 -->
     <div v-if="providerSettings.providers.value.length === 0" class="agent-guide">
       <div class="guide-icon">&#9881;</div>
-      <div class="guide-title">还没有 AI 模型服务</div>
+      <div class="guide-title">{{ $t('agent.guideTitle') }}</div>
       <div class="guide-desc">
-        需要一个 AI 模型来提供代码编辑建议。<br />
-        支持 DeepSeek、OpenAI 等兼容接口的服务。
+        {{ $t('agent.guideDesc1') }}<br />
+        {{ $t('agent.guideDesc2') }}
       </div>
-      <button class="guide-cta" @click="showSettings = true">添加模型服务</button>
+      <button class="guide-cta" @click="showSettings = true">{{ $t('agent.addProvider') }}</button>
     </div>
 
     <!-- 有提供商时显示正常的聊天界面 -->
@@ -21,7 +21,7 @@
       <!-- 消息列表 -->
       <div class="agent-messages" ref="messagesContainer">
         <div v-if="agent.messages.value.length === 0" class="agent-empty">
-          Ask the agent to help with editing
+          {{ $t('agent.emptyChat') }}
         </div>
         <div
           v-for="msg in agent.messages.value"
@@ -34,7 +34,7 @@
           <!-- 思考过程 —— 可折叠，与最终结果有视觉区分 -->
           <div v-if="msg.thinking" class="msg-thinking">
             <div class="thinking-header" @click="toggleThinking(msg.id)">
-              <span class="thinking-indicator">&#9881; Reasoning</span>
+              <span class="thinking-indicator">&#9881; {{ $t('agent.reasoning') }}</span>
               <span class="thinking-toggle">{{ expandedThinking[msg.id] ? '&#9650;' : '&#9660;' }}</span>
             </div>
             <div v-if="expandedThinking[msg.id]" class="thinking-body">
@@ -45,22 +45,22 @@
           <!-- 思考→结果分隔线 -->
           <div v-if="msg.thinking && msg.content" class="thinking-separator">
             <span class="separator-line"></span>
-            <span class="separator-label">Response</span>
+            <span class="separator-label">{{ $t('agent.response') }}</span>
             <span class="separator-line"></span>
           </div>
 
           <div class="msg-content" v-html="renderMarkdown(msg.content)"></div>
           <div v-if="msg.editOperations && msg.editOperations.length > 0" class="edit-summary">
-            {{ msg.editOperations.length }} 个文件已修改：
+            {{ msg.editOperations.length }}{{ $t('agent.filesModified') }}
             <span v-for="e in msg.editOperations" :key="e.path" class="edit-file">{{ e.path }}</span>
-            <button class="undo-btn" @click="emit('undo-edits')">Undo</button>
+            <button class="undo-btn" @click="emit('undo-edits')">{{ $t('agent.undo') }}</button>
           </div>
         </div>
 
         <!-- 处理中指示：正在思考时显示动画，执行工具时显示工具状态 -->
         <div v-if="agent.isProcessing.value" class="agent-loading">
           <template v-if="agent.thinkingActive.value">
-            <span class="thinking-pulse"></span> Thinking...
+            <span class="thinking-pulse"></span> {{ $t('agent.thinking') }}
           </template>
           <template v-else-if="agent.toolStatus.value">
             {{ agent.toolStatus.value }}
@@ -76,14 +76,14 @@
         <textarea
           v-model="input"
           class="agent-input"
-          placeholder="Ask the agent..."
+          :placeholder="$t('agent.askAgent')"
           rows="2"
           @keydown.enter.exact.prevent="send"
           @keydown.ctrl.enter.prevent="send"
           @keydown.meta.enter.prevent="send"
         ></textarea>
         <button class="agent-send-btn" @click="send" :disabled="!input.trim() || agent.isProcessing.value">
-          Send
+          {{ $t('agent.send') }}
         </button>
       </div>
 
@@ -95,7 +95,7 @@
             :activeId="providerSettings.activeId.value"
             @select="providerSettings.setActive($event)"
           />
-          <button class="settings-btn" title="提供商设置" @click="showSettings = true">&#9881;</button>
+          <button class="settings-btn" :title="$t('agent.providerSettings')" @click="showSettings = true">&#9881;</button>
         </div>
         <ModeSelector v-model="agent.config.value.mode" />
       </div>

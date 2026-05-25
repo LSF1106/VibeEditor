@@ -1,32 +1,32 @@
 <template>
   <div class="docx-viewer">
     <div v-if="isLegacyDoc" class="docx-unsupported">
-      <p class="docx-unsupported-title">Unsupported format</p>
+      <p class="docx-unsupported-title">{{ $t('viewer.unsupportedFormat') }}</p>
       <p class="docx-unsupported-hint">
-        {{ fileName }} is a legacy Word (.doc) file and cannot be previewed.
-        Only .docx files are supported.
+        {{ fileName }}{{ $t('viewer.legacyDoc') }}
+        {{ $t('viewer.onlyDocx') }}
       </p>
     </div>
     <div v-else-if="!content" class="docx-empty">
-      <p>Unable to preview this file.</p>
+      <p>{{ $t('viewer.unableToPreview') }}</p>
     </div>
     <template v-else>
       <div class="docx-toolbar">
         <div class="toolbar-group">
-          <button class="toolbar-btn" title="Zoom out" :disabled="zoom <= minZoom" @click="zoomOut">
+          <button class="toolbar-btn" :title="$t('viewer.zoomOut')" :disabled="zoom <= minZoom" @click="zoomOut">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
               <path d="M3 8h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
           </button>
-          <button class="toolbar-btn zoom-display" title="Reset zoom" @click="resetZoom">{{ zoom }}%</button>
-          <button class="toolbar-btn" title="Zoom in" :disabled="zoom >= maxZoom" @click="zoomIn">
+          <button class="toolbar-btn zoom-display" :title="$t('viewer.reset')" @click="resetZoom">{{ zoom }}%</button>
+          <button class="toolbar-btn" :title="$t('viewer.zoomIn')" :disabled="zoom >= maxZoom" @click="zoomIn">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
               <path d="M3 8h10M8 3v10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
           </button>
         </div>
         <div class="toolbar-group">
-          <button class="toolbar-btn" title="Fit to width" @click="fitToWidth">
+          <button class="toolbar-btn" :title="$t('viewer.fitToWidth')" @click="fitToWidth">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
               <path d="M2 4v8M14 4v8M2 6h12M2 10h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
@@ -45,7 +45,10 @@
 
 <script setup lang="ts">
 import { ref, watch, onMounted, computed, nextTick } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { renderAsync } from 'docx-preview';
+
+const { t } = useI18n();
 
 const props = defineProps<{
   content: string;
@@ -105,7 +108,7 @@ async function renderDocument() {
       renderEndnotes: true,
     });
   } catch (e: any) {
-    error.value = e.message || 'Failed to render document';
+    error.value = e.message || t('viewer.failedToRenderDoc');
   }
 }
 

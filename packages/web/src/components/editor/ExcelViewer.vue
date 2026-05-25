@@ -1,14 +1,14 @@
 <template>
   <div class="excel-viewer">
     <div v-if="isLegacyXls" class="excel-unsupported">
-      <p class="excel-unsupported-title">Unsupported format</p>
+      <p class="excel-unsupported-title">{{ $t('viewer.unsupportedFormat') }}</p>
       <p class="excel-unsupported-hint">
-        {{ fileName }} is a legacy Excel (.xls) file and cannot be previewed.
-        Only .xlsx files are supported.
+        {{ fileName }}{{ $t('viewer.legacyXls') }}
+        {{ $t('viewer.onlyXlsx') }}
       </p>
     </div>
     <div v-else-if="!content" class="excel-empty">
-      <p>Unable to preview this file.</p>
+      <p>{{ $t('viewer.unableToPreview') }}</p>
     </div>
     <vue-office-excel v-else :src="buffer" style="height: 100%" />
     <div v-if="error" class="excel-error">{{ error }}</div>
@@ -17,8 +17,11 @@
 
 <script setup lang="ts">
 import { ref, watch, onMounted, computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 import VueOfficeExcel from '@vue-office/excel';
 import '@vue-office/excel/lib/index.css';
+
+const { t } = useI18n();
 
 const props = defineProps<{
   content: string;
@@ -43,7 +46,7 @@ function update() {
     }
     buffer.value = bytes.buffer;
   } catch (e: any) {
-    error.value = e.message || 'Failed to decode file';
+    error.value = e.message || t('viewer.failedToDecode');
   }
 }
 

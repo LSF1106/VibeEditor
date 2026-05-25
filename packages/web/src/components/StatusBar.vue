@@ -5,7 +5,7 @@
         {{ activeTab.language }}
       </span>
       <span v-if="lineCol" class="status-item status-ln-col">
-        Ln {{ lineCol.line }}, Col {{ lineCol.column }}
+        {{ $t('statusBar.ln') }} {{ lineCol.line }}, {{ $t('statusBar.col') }} {{ lineCol.column }}
       </span>
     </div>
     <div class="status-bar-right">

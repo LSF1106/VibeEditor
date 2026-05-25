@@ -2,7 +2,7 @@
   <div v-if="visible" class="settings-overlay" @click.self="close">
     <div class="settings-dialog">
       <div class="dialog-header">
-        <span class="dialog-title">LLM 提供商设置</span>
+        <span class="dialog-title">{{ $t('settingsDialog.title') }}</span>
         <button class="dialog-close" @click="close">x</button>
       </div>
 
@@ -10,13 +10,13 @@
         <!-- 空状态：无提供商时引导添加 -->
         <div v-if="!editing && !pickingPreset && settings.providers.value.length === 0" class="empty-state">
           <div class="empty-icon">&#9881;</div>
-          <div class="empty-title">尚未添加 LLM 提供商</div>
-          <div class="empty-desc">添加 AI 提供商以使用智能代码编辑功能</div>
+          <div class="empty-title">{{ $t('settingsDialog.noProvider') }}</div>
+          <div class="empty-desc">{{ $t('settingsDialog.noProviderDesc') }}</div>
           <button class="empty-cta" @click="startAddWithPreset(PROVIDER_PRESETS[0])">
-            添加 DeepSeek（推荐）
+            {{ $t('settingsDialog.addDeepSeek') }}
           </button>
           <button class="empty-secondary" @click="pickingPreset = true">
-            选择其他提供商
+            {{ $t('settingsDialog.chooseOther') }}
           </button>
         </div>
 
@@ -41,32 +41,32 @@
         <!-- 编辑 / 新增表单 -->
         <div v-if="editing" class="edit-form">
           <div class="form-group">
-            <label>名称</label>
-            <input v-model="form.name" class="form-input" placeholder="例如: 我的 DeepSeek" />
+            <label>{{ $t('settingsDialog.name') }}</label>
+            <input v-model="form.name" class="form-input" :placeholder="$t('settingsDialog.namePlaceholder')" />
           </div>
           <div class="form-group">
-            <label>API Key</label>
-            <input v-model="form.apiKey" class="form-input" type="password" placeholder="sk-..." />
+            <label>{{ $t('settingsDialog.apiKey') }}</label>
+            <input v-model="form.apiKey" class="form-input" type="password" :placeholder="$t('settingsDialog.apiKeyPlaceholder')" />
           </div>
 
           <!-- API 地址（默认隐藏） -->
           <div class="form-group api-url-group">
             <div class="label-row">
-              <label>API 地址</label>
+              <label>{{ $t('settingsDialog.apiUrl') }}</label>
               <button
                 v-if="!showApiUrl"
                 class="toggle-api-btn"
-                title="修改 API 地址"
+                :title="$t('settingsDialog.modifyApiUrl')"
                 @click="showApiUrl = true"
               >&#8230;</button>
             </div>
-            <input v-if="showApiUrl" v-model="form.apiUrl" class="form-input" placeholder="https://api.openai.com/v1" />
+            <input v-if="showApiUrl" v-model="form.apiUrl" class="form-input" :placeholder="$t('settingsDialog.apiUrlPlaceholder')" />
           </div>
 
           <!-- 模型选择 -->
           <div class="form-group">
-            <label>模型</label>
-            <div v-if="fetchingModels" class="model-loading">获取模型列表中...</div>
+            <label>{{ $t('settingsDialog.model') }}</label>
+            <div v-if="fetchingModels" class="model-loading">{{ $t('settingsDialog.fetchingModels') }}</div>
             <div v-else-if="availableModels.length > 0" class="model-checklist">
               <label v-for="m in availableModels" :key="m" class="model-check-item" :class="{ checked: selectedModels.has(m) }">
                 <input type="checkbox" :value="m" :checked="selectedModels.has(m)" @change="toggleModel(m)" />
@@ -74,21 +74,21 @@
               </label>
             </div>
             <div v-else-if="fetchError" class="fetch-error">{{ fetchError }}</div>
-            <div v-else-if="!form.apiKey.trim()" class="model-hint">输入 API Key 后自动获取</div>
+            <div v-else-if="!form.apiKey.trim()" class="model-hint">{{ $t('settingsDialog.autoFetch') }}</div>
             <div v-else class="model-hint">
-              <a class="fetch-link" @click="fetchModels">点击获取模型列表</a>
+              <a class="fetch-link" @click="fetchModels">{{ $t('settingsDialog.clickFetch') }}</a>
             </div>
           </div>
 
           <div class="form-actions">
-            <button class="form-btn save" @click="saveForm" :disabled="selectedModels.size === 0">保存</button>
-            <button class="form-btn cancel" @click="cancelEdit">取消</button>
+            <button class="form-btn save" @click="saveForm" :disabled="selectedModels.size === 0">{{ $t('settingsDialog.save') }}</button>
+            <button class="form-btn cancel" @click="cancelEdit">{{ $t('settingsDialog.cancel') }}</button>
           </div>
         </div>
 
         <!-- 预制提供商选择（添加时先选类型） -->
         <div v-if="pickingPreset" class="preset-picker">
-          <div class="preset-title">选择提供商类型</div>
+          <div class="preset-title">{{ $t('settingsDialog.selectProvider') }}</div>
           <div
             v-for="preset in PROVIDER_PRESETS"
             :key="preset.id"
@@ -96,17 +96,17 @@
             @click="startAddWithPreset(preset)"
           >
             <span class="preset-name">{{ preset.name }}</span>
-            <span class="preset-hint">仅需输入 API Key</span>
+            <span class="preset-hint">{{ $t('settingsDialog.justApiKey') }}</span>
           </div>
           <div class="preset-card custom" @click="startAdd">
-            <span class="preset-name">自定义</span>
-            <span class="preset-hint">OpenAI 兼容 API 格式</span>
+            <span class="preset-name">{{ $t('settingsDialog.custom') }}</span>
+            <span class="preset-hint">{{ $t('settingsDialog.customHint') }}</span>
           </div>
         </div>
 
         <!-- 新增按钮 -->
         <div v-if="!editing && !pickingPreset && settings.providers.value.length > 0" class="add-btn-row">
-          <button class="form-btn add" @click="pickingPreset = true">+ 添加提供商</button>
+          <button class="form-btn add" @click="pickingPreset = true">{{ $t('settingsDialog.addProvider') }}</button>
         </div>
       </div>
     </div>
@@ -115,7 +115,10 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useProviderSettings, fetchAvailableModels, PROVIDER_PRESETS, type ProviderConfig, type ProviderPreset } from '../../composables/useProviderSettings';
+
+const { t } = useI18n();
 
 const props = defineProps<{ visible: boolean }>();
 const emit = defineEmits<{ close: [] }>();
@@ -243,10 +246,10 @@ async function fetchModels() {
     const models = await fetchAvailableModels(form.apiUrl.trim(), form.apiKey.trim());
     availableModels.value = models;
     if (models.length === 0) {
-      fetchError.value = '该地址未返回任何模型';
+      fetchError.value = t('settingsDialog.noModels');
     }
   } catch (e: any) {
-    fetchError.value = e.message || '获取模型列表失败';
+    fetchError.value = e.message || t('settingsDialog.fetchFailed');
   } finally {
     fetchingModels.value = false;
   }

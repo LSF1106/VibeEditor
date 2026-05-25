@@ -1,6 +1,7 @@
 import type { AgentConfig, AgentContext, IAgentFileSystem } from '@vibeeditor/agent';
 import { AgentLoop, parseToolCalls } from '@vibeeditor/agent';
 import type { FileServiceClient } from './fileService';
+import { i18n } from '../locales';
 
 const MAX_AGENT_TURNS = 15;
 
@@ -123,7 +124,7 @@ export async function runLocalAgentLoop(
 
     if (!response.ok) {
       const errText = await response.text();
-      throw new Error(`LLM API error ${response.status}: ${errText}`);
+      throw new Error(`${i18n.global.t('errors.llmApiError')} ${response.status}: ${errText}`);
     }
 
     const data = await response.json() as any;
@@ -158,13 +159,13 @@ export async function runLocalAgentLoop(
             const content = await fs.readFile(tool.params.path);
             result = `## File: ${tool.params.path}\n\`\`\`\n${content}\n\`\`\``;
           } catch (e: any) {
-            result = `Error reading ${tool.params.path}: ${e.message}`;
+            result = `${i18n.global.t('agentTool.readError')} ${tool.params.path}: ${e.message}`;
           }
         } else if (tool.type === 'list_dir') {
           try {
             const entries = await fs.readDir(tool.params.path);
             if (entries.length === 0) {
-              result = `## Directory: ${tool.params.path} (empty)`;
+              result = `## Directory: ${tool.params.path} (${i18n.global.t('agentTool.emptyDir')})`;
             } else {
               const lines = entries
                 .sort((a, b) => {
@@ -181,7 +182,7 @@ export async function runLocalAgentLoop(
           result = await searchCode(fs, tool.params.pattern, tool.params.path, parseInt(tool.params.maxResults || '20'));
         }
 
-        onToolEnd(`${tool.type} complete`);
+        onToolEnd(`${tool.type} ${i18n.global.t('agentTool.complete')}`);
 
         streamText(toolBlock);
         fullContent += toolBlock;
@@ -260,6 +261,6 @@ async function searchCode(
 
   await walkDir(searchPath || '.');
 
-  if (results.length === 0) return `No matches found for "${pattern}"`;
-  return `## Search results for "${pattern}":\n${results.join('\n')}`;
+  if (results.length === 0) return `${i18n.global.t('agentTool.noMatches')} "${pattern}"`;
+  return `${i18n.global.t('agentTool.searchResults')} "${pattern}":\n${results.join('\n')}`;
 }

@@ -13,6 +13,19 @@
         <div v-if="activeId === item.id" class="activity-indicator"></div>
       </div>
     </div>
+    <div v-if="bottomItems.length > 0" class="activity-bottom">
+      <div
+        v-for="item in bottomItems"
+        :key="item.id"
+        class="activity-item"
+        :class="{ active: activeId === item.id }"
+        :title="item.label"
+        @click="$emit('select', item.id)"
+      >
+        <span class="activity-icon">{{ item.icon }}</span>
+        <div v-if="activeId === item.id" class="activity-indicator"></div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -26,6 +39,7 @@ export interface ActivityItem {
 
 defineProps<{
   items: ActivityItem[];
+  bottomItems: ActivityItem[];
   activeId: string;
 }>();
 
@@ -45,7 +59,8 @@ defineEmits<{
   flex-shrink: 0;
   user-select: none;
 }
-.activity-top {
+.activity-top,
+.activity-bottom {
   display: flex;
   flex-direction: column;
 }

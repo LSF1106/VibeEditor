@@ -11,11 +11,11 @@
       <span v-else class="node-arrow-placeholder"></span>
       <span class="node-icon">{{ node.isDirectory ? '📁' : '📄' }}</span>
       <span class="node-name" :title="node.path">{{ node.name }}</span>
-      <span v-if="!node.isDirectory" class="node-delete" @click.stop="emit('delete-file', node.path)" title="Delete file">🗑</span>
+      <span v-if="!node.isDirectory" class="node-delete" @click.stop="emit('delete-file', node.path)" :title="$t('fileTree.deleteFile')">🗑</span>
     </div>
     <template v-if="expanded && node.isDirectory">
       <div v-if="loadingChild" class="tree-node-loading" :style="{ paddingLeft: (depth + 1) * 16 + 8 + 'px' }">
-        <span class="node-loading">Loading...</span>
+        <span class="node-loading">{{ $t('fileTree.loading') }}</span>
       </div>
       <TreeNode
         v-for="child in childNodes"

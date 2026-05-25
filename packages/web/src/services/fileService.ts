@@ -1,4 +1,5 @@
 import type { FileEntry } from '@vibeeditor/core';
+import { i18n } from '../locales';
 
 /**
  * 文件服务客户端接口 —— 对 @vibeeditor/core 的 IFileSystem 的扩展
@@ -243,21 +244,21 @@ export function createBrowserLocalClient(rootHandle: FileSystemDirectoryHandle):
     rootName,
     readFile: async (filePath: string) => {
       const handle = await resolvePathFromHandle(rootHandle, normPath(filePath));
-      if (!handle || handle.kind !== 'file') throw new Error(`File not found: ${filePath}`);
+      if (!handle || handle.kind !== 'file') throw new Error(`${i18n.global.t('errors.fileNotFound')} ${filePath}`);
       const file = await (handle as FileSystemFileHandle).getFile();
       return file.text();
     },
 
     readFileBuffer: async (filePath: string) => {
       const handle = await resolvePathFromHandle(rootHandle, normPath(filePath));
-      if (!handle || handle.kind !== 'file') throw new Error(`File not found: ${filePath}`);
+      if (!handle || handle.kind !== 'file') throw new Error(`${i18n.global.t('errors.fileNotFound')} ${filePath}`);
       const file = await (handle as FileSystemFileHandle).getFile();
       return file.arrayBuffer();
     },
 
     writeFile: async (filePath: string, content: string) => {
       const resolved = await resolveParentHandle(rootHandle, normPath(filePath));
-      if (!resolved) throw new Error(`Invalid path: ${filePath}`);
+      if (!resolved) throw new Error(`${i18n.global.t('errors.invalidPath')} ${filePath}`);
       const handle = await resolved.parent.getFileHandle(resolved.name, { create: true });
       const writable = await handle.createWritable();
       await writable.write(content);
@@ -268,7 +269,7 @@ export function createBrowserLocalClient(rootHandle: FileSystemDirectoryHandle):
 
     deleteFile: async (filePath: string) => {
       const resolved = await resolveParentHandle(rootHandle, normPath(filePath));
-      if (!resolved) throw new Error(`Invalid path: ${filePath}`);
+      if (!resolved) throw new Error(`${i18n.global.t('errors.invalidPath')} ${filePath}`);
       await resolved.parent.removeEntry(resolved.name);
       dirCache.delete(cacheKey(normPath(filePath).replace(/\/[^/]+$/, '')));
     },
@@ -284,7 +285,7 @@ export function createBrowserLocalClient(rootHandle: FileSystemDirectoryHandle):
         dirHandle = rootHandle;
       } else {
         const handle = await resolvePathFromHandle(rootHandle, normPath(dirPath));
-        if (!handle || handle.kind !== 'directory') throw new Error(`Directory not found: ${dirPath}`);
+        if (!handle || handle.kind !== 'directory') throw new Error(`${i18n.global.t('errors.dirNotFound')} ${dirPath}`);
         dirHandle = handle as FileSystemDirectoryHandle;
       }
 
@@ -329,7 +330,7 @@ export function createBrowserLocalClient(rootHandle: FileSystemDirectoryHandle):
 
     deleteDir: async (dirPath: string, recursive = true) => {
       const resolved = await resolveParentHandle(rootHandle, normPath(dirPath));
-      if (!resolved) throw new Error(`Invalid path: ${dirPath}`);
+      if (!resolved) throw new Error(`${i18n.global.t('errors.invalidPath')} ${dirPath}`);
       await resolved.parent.removeEntry(resolved.name, { recursive });
       dirCache.delete(cacheKey(dirPath));
     },
@@ -341,7 +342,7 @@ export function createBrowserLocalClient(rootHandle: FileSystemDirectoryHandle):
 
     stat: async (filePath: string) => {
       const handle = await resolvePathFromHandle(rootHandle, normPath(filePath));
-      if (!handle) throw new Error(`Path not found: ${filePath}`);
+      if (!handle) throw new Error(`${i18n.global.t('errors.pathNotFound')} ${filePath}`);
 
       if (handle.kind === 'file') {
         const file = await (handle as FileSystemFileHandle).getFile();
@@ -364,7 +365,7 @@ export function createBrowserLocalClient(rootHandle: FileSystemDirectoryHandle):
       // 读取源文件内容
       const content = await (async () => {
         const handle = await resolvePathFromHandle(rootHandle, normPath(oldPath));
-        if (!handle) throw new Error(`Source not found: ${oldPath}`);
+        if (!handle) throw new Error(`${i18n.global.t('errors.sourceNotFound')} ${oldPath}`);
         if (handle.kind === 'file') {
           return (handle as FileSystemFileHandle).getFile().then(f => f.text());
         }
@@ -372,14 +373,14 @@ export function createBrowserLocalClient(rootHandle: FileSystemDirectoryHandle):
       })();
 
       const oldResolved = await resolveParentHandle(rootHandle, normPath(oldPath));
-      if (!oldResolved) throw new Error(`Source not found: ${oldPath}`);
+      if (!oldResolved) throw new Error(`${i18n.global.t('errors.sourceNotFound')} ${oldPath}`);
 
       const isDir = (await resolvePathFromHandle(rootHandle, normPath(oldPath)))?.kind === 'directory';
 
       if (isDir) {
         // 目录重命名：先收集子条目，删除旧目录，在新位置重建
         const newResolved = await resolveParentHandle(rootHandle, normPath(newPath));
-        if (!newResolved) throw new Error(`Invalid target: ${newPath}`);
+        if (!newResolved) throw new Error(`${i18n.global.t('errors.invalidTarget')} ${newPath}`);
 
         const entries: FileEntry[] = [];
         const dirHandle = await oldResolved.parent.getDirectoryHandle(oldResolved.name);
@@ -394,7 +395,7 @@ export function createBrowserLocalClient(rootHandle: FileSystemDirectoryHandle):
         // 文件重命名：删除旧文件，在新位置创建并写入内容
         await oldResolved.parent.removeEntry(oldResolved.name);
         const newResolved = await resolveParentHandle(rootHandle, normPath(newPath));
-        if (!newResolved) throw new Error(`Invalid target: ${newPath}`);
+        if (!newResolved) throw new Error(`${i18n.global.t('errors.invalidTarget')} ${newPath}`);
         const newHandle = await newResolved.parent.getFileHandle(newResolved.name, { create: true });
         const writable = await newHandle.createWritable();
         await writable.write(content);

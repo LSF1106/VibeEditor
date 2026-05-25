@@ -1,11 +1,11 @@
 <template>
   <div class="image-viewer" @wheel="handleWheel" @mousedown="handleMouseDown" @mousemove="handleMouseMove" @mouseup="handleMouseUp" @mouseleave="handleMouseUp">
     <div class="image-toolbar">
-      <button @click="zoomIn" title="Zoom In">+</button>
+      <button @click="zoomIn" :title="$t('viewer.zoomIn')">+</button>
       <span class="zoom-level">{{ Math.round(scale * 100) }}%</span>
-      <button @click="zoomOut" title="Zoom Out">-</button>
-      <button @click="resetZoom" title="Reset">1:1</button>
-      <button @click="fitToScreen" title="Fit to Screen">Fit</button>
+      <button @click="zoomOut" :title="$t('viewer.zoomOut')">-</button>
+      <button @click="resetZoom" :title="$t('viewer.reset')">1:1</button>
+      <button @click="fitToScreen" :title="$t('viewer.fitToScreen')">Fit</button>
       <span class="image-info">{{ imageInfo }}</span>
     </div>
     <div class="image-canvas" ref="canvasRef">
@@ -23,6 +23,9 @@
 
 <script setup lang="ts">
 import { ref, computed, reactive } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps<{
   src: string;
@@ -59,7 +62,7 @@ function onImageLoad(e: Event) {
 }
 
 function onImageError() {
-  error.value = 'Failed to load image';
+  error.value = t('viewer.failedToLoadImage');
 }
 
 function zoomIn() {

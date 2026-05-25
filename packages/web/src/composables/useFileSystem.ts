@@ -1,4 +1,5 @@
 import { ref, onMounted, onUnmounted } from 'vue';
+import { useI18n } from 'vue-i18n';
 import {
   createBrowserLocalClient,
   createFileServiceClient,
@@ -50,6 +51,7 @@ async function getDroppedDirectoryHandle(dataTransfer: DataTransfer): Promise<Fi
  * 5. 提供 saveAs 回调注册机制供 MainLayout 集成
  */
 export function useFileSystem() {
+  const { t } = useI18n();
   const defaultClient = createFileServiceClient();
   const store = useEditorStore();
   const isLoading = ref(false);
@@ -170,7 +172,7 @@ export function useFileSystem() {
     const tab = store.activeTab;
     if (!tab) return;
     if (tab.viewMode !== 'code') {
-      error.value = 'Cannot save document previews';
+      error.value = t('fs.saveDocument');
       return;
     }
     error.value = null;
@@ -189,7 +191,7 @@ export function useFileSystem() {
           if (!result) return;
           savePath = result;
         } else {
-          const name = prompt('Enter filename:', tab.name)?.trim();
+          const name = prompt(t('fs.enterFilename'), tab.name)?.trim();
           if (!name) return;
           savePath = name.replace(/\\/g, '/');
         }
@@ -263,7 +265,7 @@ export function useFileSystem() {
   /** 创建新文件夹 */
   async function createFolder() {
     error.value = null;
-    const name = prompt('Folder name:')?.trim();
+    const name = prompt(t('fs.folderName'))?.trim();
     if (!name) return;
     try {
       const client = getClient();
@@ -283,7 +285,7 @@ export function useFileSystem() {
         localClient.value = client;
         activeClient.value = client;
         store.workspaceMode = 'local';
-        store.workspaceRoot = client.rootName || 'Local Folder';
+        store.workspaceRoot = client.rootName || t('fs.localFolder');
         await loadDirectory('.');
       }
     } catch (e: any) {
@@ -335,7 +337,7 @@ export function useFileSystem() {
     }
     activeClient.value = serverClient.value;
     store.workspaceMode = 'server';
-    store.workspaceRoot = 'Server Files';
+    store.workspaceRoot = t('fs.serverFiles');
     await loadDirectory('.');
   }
 
@@ -383,7 +385,7 @@ export function useFileSystem() {
         }
 
         if (droppedPaths.length > 0) {
-          error.value = lastError || 'Drop a folder to open it.';
+          error.value = lastError || t('fs.dropFolder');
           return false;
         }
       }
@@ -395,7 +397,7 @@ export function useFileSystem() {
         localClient.value = droppedClient;
         activeClient.value = droppedClient;
         store.workspaceMode = 'local';
-        store.workspaceRoot = droppedClient.rootName || 'Local Folder';
+        store.workspaceRoot = droppedClient.rootName || t('fs.localFolder');
         await loadDirectory('.');
         return true;
       }
@@ -407,8 +409,8 @@ export function useFileSystem() {
       });
 
       error.value = hasDirectoryHint
-        ? 'This browser cannot open dropped folders. Use Open Folder instead.'
-        : 'Drop a folder to open it.';
+        ? t('fs.browserUnsupported')
+        : t('fs.dropFolder');
       return false;
     } catch (e: any) {
       error.value = e.message;

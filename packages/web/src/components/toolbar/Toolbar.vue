@@ -1,87 +1,87 @@
 <template>
   <div class="toolbar">
     <div class="toolbar-left">
-      <button class="toolbar-btn toolbar-toggle-btn" :title="sidebarCollapsed ? 'Show Sidebar' : 'Hide Sidebar'" @click="$emit('toggle-sidebar')">
+      <button class="toolbar-btn toolbar-toggle-btn" :title="sidebarCollapsed ? $t('toolbar.showSidebar') : $t('toolbar.hideSidebar')" @click="$emit('toggle-sidebar')">
         <span class="sidebar-toggle-icon">☰</span>
       </button>
       <div class="dropdown">
         <button class="toolbar-btn dropdown-trigger">
-          File
+          {{ $t('toolbar.file') }}
           <span class="dropdown-arrow">▾</span>
         </button>
         <div class="dropdown-menu">
-          <button class="dropdown-item" title="New File (Ctrl+N)" @click="$emit('new-file')">
-            New File
-            <span class="dropdown-shortcut">Ctrl+N</span>
+          <button class="dropdown-item" :title="$t('toolbar.newFile') + ' (' + $t('toolbar.newFileShort') + ')'" @click="$emit('new-file')">
+            {{ $t('toolbar.newFile') }}
+            <span class="dropdown-shortcut">{{ $t('toolbar.newFileShort') }}</span>
           </button>
-          <button class="dropdown-item" title="New Folder" @click="$emit('new-folder')">
-            New Folder
-          </button>
-          <div class="dropdown-sep"></div>
-          <button class="dropdown-item" title="Open Folder" @click="$emit('open-folder')">
-            Open Folder
-          </button>
-          <button v-if="env === 'browser' || env === 'server'" class="dropdown-item" title="Browse Server" @click="$emit('connect-server')">
-            Browse Server
-          </button>
-          <button v-if="env === 'browser'" class="dropdown-item" title="Open File" @click="$emit('open-local-file')">
-            Open File
+          <button class="dropdown-item" :title="$t('toolbar.newFolder')" @click="$emit('new-folder')">
+            {{ $t('toolbar.newFolder') }}
           </button>
           <div class="dropdown-sep"></div>
-          <button class="dropdown-item" title="Save (Ctrl+S)" @click="$emit('save')">
-            Save
-            <span class="dropdown-shortcut">Ctrl+S</span>
+          <button class="dropdown-item" :title="$t('toolbar.openFolder')" @click="$emit('open-folder')">
+            {{ $t('toolbar.openFolder') }}
+          </button>
+          <button v-if="env === 'browser' || env === 'server'" class="dropdown-item" :title="$t('toolbar.browseServer')" @click="$emit('connect-server')">
+            {{ $t('toolbar.browseServer') }}
+          </button>
+          <button v-if="env === 'browser'" class="dropdown-item" :title="$t('toolbar.openFile')" @click="$emit('open-local-file')">
+            {{ $t('toolbar.openFile') }}
+          </button>
+          <div class="dropdown-sep"></div>
+          <button class="dropdown-item" :title="$t('toolbar.save') + ' (' + $t('toolbar.saveShort') + ')'" @click="$emit('save')">
+            {{ $t('toolbar.save') }}
+            <span class="dropdown-shortcut">{{ $t('toolbar.saveShort') }}</span>
           </button>
         </div>
       </div>
       <div class="dropdown">
         <button class="toolbar-btn dropdown-trigger">
-          Edit
+          {{ $t('toolbar.edit') }}
           <span class="dropdown-arrow">▾</span>
         </button>
         <div class="dropdown-menu">
-          <button class="dropdown-item" title="Cut (Ctrl+X)" @click="$emit('edit-cut')">
-            Cut
-            <span class="dropdown-shortcut">Ctrl+X</span>
+          <button class="dropdown-item" :title="$t('toolbar.cut') + ' (' + $t('toolbar.cutShort') + ')'" @click="$emit('edit-cut')">
+            {{ $t('toolbar.cut') }}
+            <span class="dropdown-shortcut">{{ $t('toolbar.cutShort') }}</span>
           </button>
-          <button class="dropdown-item" title="Copy (Ctrl+C)" @click="$emit('edit-copy')">
-            Copy
-            <span class="dropdown-shortcut">Ctrl+C</span>
+          <button class="dropdown-item" :title="$t('toolbar.copy') + ' (' + $t('toolbar.copyShort') + ')'" @click="$emit('edit-copy')">
+            {{ $t('toolbar.copy') }}
+            <span class="dropdown-shortcut">{{ $t('toolbar.copyShort') }}</span>
           </button>
-          <button class="dropdown-item" title="Paste (Ctrl+V)" @click="$emit('edit-paste')">
-            Paste
-            <span class="dropdown-shortcut">Ctrl+V</span>
-          </button>
-          <div class="dropdown-sep"></div>
-          <button class="dropdown-item" title="Undo (Ctrl+Z)" @click="$emit('edit-undo')">
-            Undo
-            <span class="dropdown-shortcut">Ctrl+Z</span>
-          </button>
-          <button class="dropdown-item" title="Redo (Ctrl+Y)" @click="$emit('edit-redo')">
-            Redo
-            <span class="dropdown-shortcut">Ctrl+Y</span>
+          <button class="dropdown-item" :title="$t('toolbar.paste') + ' (' + $t('toolbar.pasteShort') + ')'" @click="$emit('edit-paste')">
+            {{ $t('toolbar.paste') }}
+            <span class="dropdown-shortcut">{{ $t('toolbar.pasteShort') }}</span>
           </button>
           <div class="dropdown-sep"></div>
-          <button class="dropdown-item" title="Find (Ctrl+F)" @click="$emit('edit-find')">
-            Find
-            <span class="dropdown-shortcut">Ctrl+F</span>
+          <button class="dropdown-item" :title="$t('toolbar.undo') + ' (' + $t('toolbar.undoShort') + ')'" @click="$emit('edit-undo')">
+            {{ $t('toolbar.undo') }}
+            <span class="dropdown-shortcut">{{ $t('toolbar.undoShort') }}</span>
           </button>
-          <button class="dropdown-item" title="Replace (Ctrl+H)" @click="$emit('edit-replace')">
-            Replace
-            <span class="dropdown-shortcut">Ctrl+H</span>
+          <button class="dropdown-item" :title="$t('toolbar.redo') + ' (' + $t('toolbar.redoShort') + ')'" @click="$emit('edit-redo')">
+            {{ $t('toolbar.redo') }}
+            <span class="dropdown-shortcut">{{ $t('toolbar.redoShort') }}</span>
+          </button>
+          <div class="dropdown-sep"></div>
+          <button class="dropdown-item" :title="$t('toolbar.find') + ' (' + $t('toolbar.findShort') + ')'" @click="$emit('edit-find')">
+            {{ $t('toolbar.find') }}
+            <span class="dropdown-shortcut">{{ $t('toolbar.findShort') }}</span>
+          </button>
+          <button class="dropdown-item" :title="$t('toolbar.replace') + ' (' + $t('toolbar.replaceShort') + ')'" @click="$emit('edit-replace')">
+            {{ $t('toolbar.replace') }}
+            <span class="dropdown-shortcut">{{ $t('toolbar.replaceShort') }}</span>
           </button>
         </div>
       </div>
     </div>
     <div class="toolbar-center">
-      <span class="toolbar-title">VibeEditor</span>
+      <span class="toolbar-title">{{ $t('toolbar.appName') }}</span>
     </div>
     <div class="toolbar-right">
       <span v-if="workspaceMode" class="toolbar-badge">
         {{ workspaceMode.toUpperCase() }}
       </span>
-      <button class="toolbar-btn toolbar-agent-btn" title="Toggle Agent Panel" @click="$emit('toggle-agent')">
-        Agent
+      <button class="toolbar-btn toolbar-agent-btn" :title="$t('toolbar.toggleAgent')" @click="$emit('toggle-agent')">
+        {{ $t('toolbar.agent') }}
       </button>
     </div>
   </div>
@@ -96,7 +96,6 @@ defineProps<{
   sidebarCollapsed?: boolean;
 }>();
 
-// 纯展示组件，所有操作通过 emit 事件向上通知 MainLayout
 defineEmits<{
   'open-folder': [];
   'connect-server': [];

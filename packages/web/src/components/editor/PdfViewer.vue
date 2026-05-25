@@ -1,7 +1,7 @@
 <template>
   <div class="pdf-viewer">
     <div v-if="!content" class="pdf-empty">
-      <p>Unable to preview this file.</p>
+      <p>{{ $t('viewer.unableToPreview') }}</p>
     </div>
     <iframe
       v-else-if="pdfUrl"
@@ -16,6 +16,9 @@
 
 <script setup lang="ts">
 import { ref, watch, onMounted, onBeforeUnmount } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps<{
   content: string;
@@ -57,7 +60,7 @@ function loadPdf() {
     const blobUrl = URL.createObjectURL(blob);
     pdfUrl.value = `/pdfjs2/web/viewer.html?file=${encodeURIComponent(blobUrl)}`;
   } catch (e: any) {
-    error.value = e.message || 'Failed to load PDF';
+    error.value = e.message || t('viewer.failedToLoadPdf');
   }
 }
 

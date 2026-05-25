@@ -29,7 +29,8 @@
     />
     <div class="main-content">
       <ActivityBar
-        :items="activityItems"
+        :items="topActivityItems"
+        :bottom-items="bottomActivityItems"
         :active-id="activeActivity"
         @select="onActivitySelect"
       />
@@ -60,6 +61,16 @@
             :client="fs.client"
             @open-file="fs.openAndReadFile"
           />
+        </template>
+        <template v-else-if="activeActivity === 'settings'">
+          <SideBar
+            :title="activeActivityTitle"
+            :sections="sidebarSections"
+          >
+            <template v-slot:language>
+              <SettingsPanel />
+            </template>
+          </SideBar>
         </template>
         <template v-else>
           <SideBar
@@ -119,23 +130,23 @@
           />
           <div v-else class="editor-placeholder">
             <div class="placeholder-content">
-              <p class="placeholder-title">VibeEditor</p>
-              <p class="placeholder-hint">Open a folder or file to get started</p>
+              <p class="placeholder-title">{{ $t('placeholder.title') }}</p>
+              <p class="placeholder-hint">{{ $t('placeholder.hint') }}</p>
               <div class="placeholder-actions">
-                <button class="placeholder-btn" @click="fs.openFolderDialog">📂 Open Folder</button>
+                <button class="placeholder-btn" @click="fs.openFolderDialog">{{ $t('placeholder.openFolder') }}</button>
                 <button
                   v-if="fs.env === 'browser' || fs.env === 'server'"
                   class="placeholder-btn"
                   @click="fs.connectToServer"
                 >
-                  🌐 Browse Server
+                  {{ $t('placeholder.browseServer') }}
                 </button>
                 <button
                   v-if="fs.env === 'browser'"
                   class="placeholder-btn"
                   @click="fs.openLocalFile"
                 >
-                  📄 Open File
+                  {{ $t('placeholder.openFile') }}
                 </button>
               </div>
             </div>
@@ -161,20 +172,21 @@
     />
     <div v-if="isDraggingFolder" class="drop-overlay">
       <div class="drop-message">
-        <span class="drop-title">Drop folder to open</span>
-        <span class="drop-subtitle">Release anywhere in VibeEditor</span>
+        <span class="drop-title">{{ $t('dragOverlay.title') }}</span>
+        <span class="drop-subtitle">{{ $t('dragOverlay.subtitle') }}</span>
       </div>
     </div>
     <div v-if="fs.showUndoNotification" class="undo-notification">
-      <span class="undo-text">Deleted {{ fs.lastDeleted?.path }}</span>
-      <button class="undo-btn" @click="fs.undoDelete()">Undo</button>
+      <span class="undo-text">{{ $t('undoNotification.deleted') }} {{ fs.lastDeleted?.path }}</span>
+      <button class="undo-btn" @click="fs.undoDelete()">{{ $t('undoNotification.undo') }}</button>
       <button class="undo-dismiss" @click="fs.showUndoNotification = false">✕</button>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch } from 'vue';
+import { ref, reactive, watch, computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useEditorStore } from '../../stores/editor';
 import { useFileSystem } from '../../composables/useFileSystem';
 import { getEditorInstance } from '../../services/editorInstance';
@@ -193,11 +205,13 @@ import ExcelViewer from '../editor/ExcelViewer.vue';
 import PptxViewer from '../editor/PptxViewer.vue';
 import PdfViewer from '../editor/PdfViewer.vue';
 import AgentPanel from '../agent/AgentPanel.vue';
+import SettingsPanel from '../settings/SettingsPanel.vue';
 import SaveDialog from '../SaveDialog.vue';
 import StatusBar from '../StatusBar.vue';
 
 const store = useEditorStore();
 const fs = reactive(useFileSystem());
+const { t } = useI18n();
 
 // ===== 布局状态 =====
 const showAgent = ref(false);
@@ -211,18 +225,24 @@ const isDraggingFolder = ref(false);
 let dragDepth = 0;
 
 // ===== 活动栏配置 =====
-const activityItems: ActivityItem[] = [
-  { id: 'explorer', label: 'Explorer (Ctrl+Shift+E)', icon: '🗋' },
-  { id: 'search', label: 'Search (Ctrl+Shift+F)', icon: '🔍' },
-  { id: 'source-control', label: 'Source Control (Ctrl+Shift+G)', icon: '⑂' },
-  { id: 'debug', label: 'Run and Debug (Ctrl+Shift+D)', icon: '🐞' },
-  { id: 'extensions', label: 'Extensions (Ctrl+Shift+X)', icon: '🧩' },
-];
+const topActivityItems = computed<ActivityItem[]>(() => [
+  { id: 'explorer', label: t('activityBar.explorer'), icon: '🗋' },
+  { id: 'search', label: t('activityBar.search'), icon: '🔍' },
+  { id: 'source-control', label: t('activityBar.sourceControl'), icon: '⑂' },
+  { id: 'debug', label: t('activityBar.debug'), icon: '🐞' },
+  { id: 'extensions', label: t('activityBar.extensions'), icon: '🧩' },
+]);
 
-const activeActivityTitle = ref('EXPLORER');
+const bottomActivityItems = computed<ActivityItem[]>(() => [
+  { id: 'settings', label: t('activityBar.manage'), icon: '⚙' },
+]);
+
+const activityItems = computed<ActivityItem[]>(() => [...topActivityItems.value, ...bottomActivityItems.value]);
+
+const activeActivityTitle = ref(t('sidebar.explorer'));
 
 const sidebarSections = ref<SideBarSection[]>([
-  { id: 'explorer', label: 'EXPLORER', count: 0 },
+  { id: 'explorer', label: t('sidebar.explorer'), count: 0 },
 ]);
 
 /** 活动栏切换：点击同一项 → 折叠侧边栏；不同项 → 切换内容 */
@@ -232,7 +252,8 @@ function onActivitySelect(id: string) {
     return;
   }
   activeActivity.value = id;
-  const item = activityItems.find(i => i.id === id);
+  const allItems = activityItems.value;
+  const item = allItems.find(i => i.id === id);
   if (item) {
     activeActivityTitle.value = item.label.replace(/\s*\(.*/, '').toUpperCase();
   }
@@ -241,15 +262,19 @@ function onActivitySelect(id: string) {
   }
   if (id === 'explorer') {
     sidebarSections.value = [
-      { id: 'explorer', label: 'EXPLORER', count: store.fileTreeNodes.length },
+      { id: 'explorer', label: t('sidebar.explorer'), count: store.fileTreeNodes.length },
     ];
   } else if (id === 'search') {
     sidebarSections.value = [
-      { id: 'search', label: 'SEARCH', count: undefined },
+      { id: 'search', label: t('sidebar.search'), count: undefined },
+    ];
+  } else if (id === 'settings') {
+    sidebarSections.value = [
+      { id: 'language', label: t('sidebar.language'), count: undefined },
     ];
   } else {
     sidebarSections.value = [
-      { id: 'placeholder', label: 'COMING SOON', count: undefined },
+      { id: 'placeholder', label: t('sidebar.comingSoon'), count: undefined },
     ];
   }
 }
@@ -388,7 +413,7 @@ fs.setOnAfterSave(handleAfterSave);
 watch(() => store.fileTreeNodes.length, (count) => {
   if (activeActivity.value === 'explorer' && sidebarSections.value[0]) {
     sidebarSections.value = [
-      { id: 'explorer', label: 'EXPLORER', count },
+      { id: 'explorer', label: t('sidebar.explorer'), count },
     ];
   }
 });
@@ -486,9 +511,9 @@ async function handleDrop(e: DragEvent) {
   // A successful drop replaces the workspace, so reset tree expansion state.
   clearDirState();
   activeActivity.value = 'explorer';
-  activeActivityTitle.value = 'EXPLORER';
+  activeActivityTitle.value = t('sidebar.explorer');
   sidebarSections.value = [
-    { id: 'explorer', label: 'EXPLORER', count: store.fileTreeNodes.length },
+    { id: 'explorer', label: t('sidebar.explorer'), count: store.fileTreeNodes.length },
   ];
   if (sidebarCollapsed.value) toggleSidebar();
 }
