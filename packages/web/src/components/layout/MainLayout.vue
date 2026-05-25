@@ -33,7 +33,11 @@
         :bottom-items="bottomActivityItems"
         :active-id="activeActivity"
         @select="onActivitySelect"
-      />
+      >
+        <template v-slot:bottom>
+          <SettingDropdown />
+        </template>
+      </ActivityBar>
       <div v-if="!sidebarCollapsed" class="sidebar" :style="{ width: sidebarWidth + 'px' }">
         <template v-if="activeActivity === 'explorer'">
           <SideBar
@@ -61,19 +65,6 @@
             :client="fs.client"
             @open-file="fs.openAndReadFile"
           />
-        </template>
-        <template v-else-if="activeActivity === 'settings'">
-          <SideBar
-            :title="activeActivityTitle"
-            :sections="sidebarSections"
-          >
-            <template v-slot:language>
-              <SettingsPanel section="language" />
-            </template>
-            <template v-slot:appearance>
-              <SettingsPanel section="appearance" />
-            </template>
-          </SideBar>
         </template>
         <template v-else>
           <SideBar
@@ -208,7 +199,7 @@ import ExcelViewer from '../editor/ExcelViewer.vue';
 import PptxViewer from '../editor/PptxViewer.vue';
 import PdfViewer from '../editor/PdfViewer.vue';
 import AgentPanel from '../agent/AgentPanel.vue';
-import SettingsPanel from '../settings/SettingsPanel.vue';
+import SettingDropdown from '../settings/SettingDropdown.vue';
 import SaveDialog from '../SaveDialog.vue';
 import StatusBar from '../StatusBar.vue';
 
@@ -236,9 +227,7 @@ const topActivityItems = computed<ActivityItem[]>(() => [
   { id: 'extensions', label: t('activityBar.extensions'), icon: '🧩' },
 ]);
 
-const bottomActivityItems = computed<ActivityItem[]>(() => [
-  { id: 'settings', label: t('activityBar.manage'), icon: '⚙' },
-]);
+const bottomActivityItems = computed<ActivityItem[]>(() => []);
 
 const activityItems = computed<ActivityItem[]>(() => [...topActivityItems.value, ...bottomActivityItems.value]);
 
@@ -270,11 +259,6 @@ function onActivitySelect(id: string) {
   } else if (id === 'search') {
     sidebarSections.value = [
       { id: 'search', label: t('sidebar.search'), count: undefined },
-    ];
-  } else if (id === 'settings') {
-    sidebarSections.value = [
-      { id: 'language', label: t('sidebar.language'), count: undefined },
-      { id: 'appearance', label: t('sidebar.appearance'), count: undefined },
     ];
   } else {
     sidebarSections.value = [

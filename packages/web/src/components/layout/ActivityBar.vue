@@ -26,6 +26,7 @@
         <div v-if="activeId === item.id" class="activity-indicator"></div>
       </div>
     </div>
+    <slot name="bottom" />
   </div>
 </template>
 

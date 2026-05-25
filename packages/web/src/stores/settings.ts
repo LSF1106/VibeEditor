@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { i18n } from '../locales';
 
 export type Language = 'zh' | 'en';
@@ -38,7 +38,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const initialTheme = loadTheme();
   applyTheme(initialTheme);
 
-  const theme = computed<Theme>(() => document.documentElement.getAttribute('data-theme') as Theme || 'dark');
+  const theme = ref<Theme>(initialTheme);
 
   function setLanguage(lang: Language) {
     i18n.global.locale.value = lang;
@@ -46,6 +46,7 @@ export const useSettingsStore = defineStore('settings', () => {
   }
 
   function setTheme(t: Theme) {
+    theme.value = t;
     applyTheme(t);
     saveTheme(t);
   }
