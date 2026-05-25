@@ -169,7 +169,7 @@ export function useFileSystem() {
   async function saveCurrentFile() {
     const tab = store.activeTab;
     if (!tab) return;
-    if (tab.viewMode !== 'code') {
+    if (tab.viewMode !== 'code' && tab.viewMode !== 'html' && tab.viewMode !== 'markdown') {
       error.value = 'Cannot save document previews';
       return;
     }

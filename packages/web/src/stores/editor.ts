@@ -6,7 +6,7 @@ const IMAGE_EXTENSIONS = new Set([
 ]);
 
 /** 决定使用哪个渲染器来展示标签页内容 */
-export type ViewMode = 'code' | 'image' | 'docx' | 'excel' | 'pptx' | 'pdf';
+export type ViewMode = 'code' | 'image' | 'docx' | 'excel' | 'pptx' | 'pdf' | 'html' | 'markdown';
 
 /** 编辑器标签页 —— 代表一个打开的文件 */
 export interface EditorTab {
@@ -48,6 +48,8 @@ export function getViewModeFromPath(filePath: string): ViewMode {
   if (ext === 'xlsx' || ext === 'xls') return 'excel';
   if (ext === 'pptx' || ext === 'ppt') return 'pptx';
   if (ext === 'pdf') return 'pdf';
+  if (ext === 'html' || ext === 'htm') return 'html';
+  if (ext === 'md' || ext === 'mdx' || ext === 'markdown') return 'markdown';
   return 'code';
 }
 
