@@ -5,7 +5,7 @@
         {{ activeTab.language }}
       </span>
       <span v-if="lineCol" class="status-item status-ln-col">
-        Ln {{ lineCol.line }}, Col {{ lineCol.column }}
+        {{ $t('statusBar.ln') }} {{ lineCol.line }}, {{ $t('statusBar.col') }} {{ lineCol.column }}
       </span>
     </div>
     <div class="status-bar-right">
@@ -83,12 +83,12 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   height: 22px;
-  background: var(--accent-color);
+  background: var(--statusbar-bg);
   padding: 0 10px;
   flex-shrink: 0;
   user-select: none;
   font-size: 12px;
-  color: #fff;
+  color: var(--statusbar-text);
 }
 .status-bar-left,
 .status-bar-right {
@@ -105,7 +105,7 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 .status-item:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(128, 128, 128, 0.12);
 }
 .status-ln-col {
   cursor: default;
@@ -117,6 +117,6 @@ onBeforeUnmount(() => {
 }
 .status-notification {
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.7);
+  opacity: 0.7;
 }
 </style>

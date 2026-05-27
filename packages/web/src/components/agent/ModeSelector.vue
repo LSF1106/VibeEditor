@@ -6,12 +6,12 @@
         class="mode-option"
         :class="{ active: modelValue === 'build' }"
         @click="$emit('update:modelValue', 'build')"
-      >build</button>
+      >{{ $t('modeSelector.build') }}</button>
       <button
         class="mode-option"
         :class="{ active: modelValue === 'plan' }"
         @click="$emit('update:modelValue', 'plan')"
-      >plan</button>
+      >{{ $t('modeSelector.plan') }}</button>
     </div>
   </div>
 </template>

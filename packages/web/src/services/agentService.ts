@@ -1,4 +1,5 @@
 import type { AgentConfig } from '@vibeeditor/agent';
+import { i18n } from '../locales';
 
 export type { AgentConfig };
 
@@ -25,7 +26,7 @@ export function createAgentService(baseUrl = '') {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message, context, config }),
       });
-      if (!res.ok) throw new Error(`Agent API error: ${res.status}`);
+      if (!res.ok) throw new Error(`${i18n.global.t('errors.apiError')}: ${res.status}`);
       return res.json();
     },
 
@@ -48,11 +49,11 @@ export function createAgentService(baseUrl = '') {
 
       if (!res.ok) {
         const errText = await res.text();
-        throw new Error(`Agent API error ${res.status}: ${errText}`);
+        throw new Error(`${i18n.global.t('errors.apiError')} ${res.status}: ${errText}`);
       }
 
       const reader = res.body?.getReader();
-      if (!reader) throw new Error('Stream not available');
+      if (!reader) throw new Error(i18n.global.t('errors.streamNotAvailable'));
 
       const decoder = new TextDecoder();
       let fullContent = '';

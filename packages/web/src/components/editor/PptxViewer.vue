@@ -1,21 +1,21 @@
 <template>
   <div class="pptx-viewer" ref="viewerRef">
     <div v-if="isLegacyPpt" class="pptx-unsupported">
-      <p class="pptx-unsupported-title">Unsupported format</p>
+      <p class="pptx-unsupported-title">{{ $t('viewer.unsupportedFormat') }}</p>
       <p class="pptx-unsupported-hint">
-        {{ fileName }} is a legacy PowerPoint (.ppt) file and cannot be previewed.
-        Only .pptx files are supported.
+        {{ fileName }}{{ $t('viewer.legacyPpt') }}
+        {{ $t('viewer.onlyPptx') }}
       </p>
     </div>
     <div v-else-if="!content" class="pptx-empty">
-      <p>Unable to preview this file.</p>
+      <p>{{ $t('viewer.unableToPreview') }}</p>
     </div>
     <template v-else>
       <div class="pptx-toolbar">
         <div class="toolbar-group">
           <button
             class="toolbar-btn"
-            title="Toggle thumbnails"
+            :title="$t('viewer.toggleThumbnails')"
             @click="showSidebar = !showSidebar"
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -25,7 +25,7 @@
           </button>
         </div>
         <div class="toolbar-group">
-          <button class="toolbar-btn" title="Previous slide" :disabled="currentSlide <= 1" @click="goToSlide(currentSlide - 1)">
+          <button class="toolbar-btn" :title="$t('viewer.prevSlide')" :disabled="currentSlide <= 1" @click="goToSlide(currentSlide - 1)">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
               <path d="M10 4l-4 4 4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
@@ -41,27 +41,27 @@
             />
             <span class="page-total">/ {{ totalSlides || '...' }}</span>
           </span>
-          <button class="toolbar-btn" title="Next slide" :disabled="currentSlide >= totalSlides" @click="goToSlide(currentSlide + 1)">
+          <button class="toolbar-btn" :title="$t('viewer.nextSlide')" :disabled="currentSlide >= totalSlides" @click="goToSlide(currentSlide + 1)">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
               <path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
           </button>
         </div>
         <div class="toolbar-group">
-          <button class="toolbar-btn" title="Zoom out" :disabled="zoom <= minZoom" @click="zoomOut">
+          <button class="toolbar-btn" :title="$t('viewer.zoomOut')" :disabled="zoom <= minZoom" @click="zoomOut">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
               <path d="M3 8h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
           </button>
-          <button class="toolbar-btn zoom-display" title="Reset zoom" @click="resetZoom">{{ zoom }}%</button>
-          <button class="toolbar-btn" title="Zoom in" :disabled="zoom >= maxZoom" @click="zoomIn">
+          <button class="toolbar-btn zoom-display" :title="$t('viewer.reset')" @click="resetZoom">{{ zoom }}%</button>
+          <button class="toolbar-btn" :title="$t('viewer.zoomIn')" :disabled="zoom >= maxZoom" @click="zoomIn">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
               <path d="M3 8h10M8 3v10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
           </button>
         </div>
         <div class="toolbar-group">
-          <button class="toolbar-btn" title="Fit to width" @click="zoom = 100">
+          <button class="toolbar-btn" :title="$t('viewer.fitToWidth')" @click="zoom = 100">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
               <path d="M2 4v8M14 4v8M2 6h12M2 10h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
@@ -77,7 +77,7 @@
             :class="{ active: currentSlide === idx }"
             @click="goToSlide(idx)"
           >
-            <span class="thumbnail-label">Slide {{ idx }}</span>
+              <span class="thumbnail-label">{{ $t('viewer.slide') }}{{ idx }}</span>
             <div
               class="thumbnail-preview"
               :ref="(el) => { if (el) thumbRefs[idx - 1] = el as HTMLElement }"
@@ -101,7 +101,10 @@
 
 <script setup lang="ts">
 import { ref, watch, onMounted, onBeforeUnmount, computed, nextTick } from 'vue';
+import { useI18n } from 'vue-i18n';
 import VueOfficePptx from '@vue-office/pptx';
+
+const { t } = useI18n();
 
 const props = defineProps<{
   content: string;
@@ -153,7 +156,7 @@ function onRendered(presentation: any) {
 }
 
 function onPptxError(e: any) {
-  error.value = e?.message || 'Failed to render presentation';
+  error.value = e?.message || t('viewer.failedToRenderPptx');
 }
 
 function detectSlidesFromDom() {
@@ -255,7 +258,7 @@ function update() {
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
     buffer.value = bytes.buffer;
   } catch (e: any) {
-    error.value = e.message || 'Failed to decode file';
+    error.value = e.message || t('viewer.failedToDecode');
   }
 }
 

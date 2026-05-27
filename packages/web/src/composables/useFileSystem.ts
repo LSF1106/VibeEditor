@@ -1,4 +1,5 @@
 import { ref, onMounted, onUnmounted } from 'vue';
+import { useI18n } from 'vue-i18n';
 import {
   createBrowserLocalClient,
   createFileServiceClient,
@@ -50,6 +51,7 @@ async function getDroppedDirectoryHandle(dataTransfer: DataTransfer): Promise<Fi
  * 5. 提供 saveAs 回调注册机制供 MainLayout 集成
  */
 export function useFileSystem() {
+  const { t } = useI18n();
   const defaultClient = createFileServiceClient();
   const store = useEditorStore();
   const isLoading = ref(false);
@@ -58,6 +60,9 @@ export function useFileSystem() {
   const serverClient = ref<FileServiceClient | null>(null);
   const localClient = ref<FileServiceClient | null>(null);
   const env = detectEnvironment();
+
+  // 浏览器模式多工作区：每个根路径对应独立的 FileServiceClient
+  const rootClients = new Map<string, FileServiceClient>();
 
   // saveAs 回调：由 MainLayout 注册的"另存为"对话框处理函数
   let saveAsHandler: (() => Promise<string | null>) | null = null;
@@ -87,12 +92,67 @@ export function useFileSystem() {
     return activeClient.value;
   }
 
+  /** 多工作区：根据路径查找对应的 client 并返回去除根前缀的相对路径 */
+  function resolveClient(filePath: string): { client: FileServiceClient; relativePath: string } {
+    for (const [rootPath, client] of rootClients.entries()) {
+      const normalized = rootPath.replace(/[\\/]$/, '');
+      if (filePath.startsWith(normalized + '/')) {
+        return { client, relativePath: filePath.slice(normalized.length + 1) };
+      }
+      if (filePath.startsWith(normalized + '\\')) {
+        return { client, relativePath: filePath.slice(normalized.length + 1) };
+      }
+      if (filePath === normalized) {
+        return { client, relativePath: filePath };
+      }
+    }
+    return { client: getClient(), relativePath: filePath };
+  }
+
+  /** 根据虚拟路径解析实际路径并选择正确的 client 读取目录 */
+  async function readDirForPath(virtualPath: string): Promise<any[]> {
+    const actualPath = virtualPath.startsWith('__root__') ? virtualPath.slice(8) : virtualPath;
+
+    for (const [rootPath, client] of rootClients.entries()) {
+      if (actualPath === rootPath) {
+        return client.readDir('.');
+      }
+      if (actualPath.startsWith(rootPath + '/') || actualPath.startsWith(rootPath + '\\')) {
+        const relativePath = actualPath.slice(rootPath.length + 1);
+        const entries = await client.readDir(relativePath);
+        // 浏览器客户端的 readDir 返回的路径自带目录前缀，剥离后由 handleExpandDir 统一拼接
+        const prefix = relativePath + '/';
+        return entries.map((e: any) => ({
+          ...e,
+          path: e.path.startsWith(prefix) ? e.path.slice(prefix.length) : e.path,
+        }));
+      }
+    }
+
+    // Fallback: server/electron 模式，entry.path 相对于 cwd 而非读取目录，
+    // 用 entry.name 替代以消除路径前缀，由 handleExpandDir 统一拼接 displayRoot
+    const entries = await getClient().readDir(actualPath);
+    return entries.map((e: any) => ({ ...e, path: e.name }));
+  }
+
   /** 加载目录内容到 store.fileTreeNodes */
   async function loadDirectory(dirPath: string = '.') {
     isLoading.value = true;
     error.value = null;
     try {
       const client = getClient();
+      if (dirPath === '.' && store.workspaceRoots.length > 1) {
+        const rootNodes: any[] = [];
+        for (const root of store.workspaceRoots) {
+          rootNodes.push({
+            name: root.name,
+            path: `__root__${root.path}`,
+            isDirectory: true,
+          });
+        }
+        store.fileTreeNodes = rootNodes;
+        return rootNodes;
+      }
       const entries = await client.readDir(dirPath);
       store.fileTreeNodes = entries;
       return entries;
@@ -132,30 +192,32 @@ export function useFileSystem() {
     isLoading.value = true;
     error.value = null;
     try {
-      const client = getClient();
       const ext = filePath.split('.').pop()?.toLowerCase() || '';
       const viewMode = getViewModeFromPath(filePath);
 
+      const resolved = resolveClient(filePath);
+      const readPath = resolved.relativePath;
+
       if (viewMode === 'image') {
-        const buffer = await client.readFileBuffer(filePath);
+        const buffer = await resolved.client.readFileBuffer(readPath);
         const mime = getMimeType(ext);
         store.openFile(filePath, arrayBufferToDataUrl(buffer, mime));
       } else if (viewMode === 'docx') {
-        const buffer = await client.readFileBuffer(filePath);
+        const buffer = await resolved.client.readFileBuffer(readPath);
         store.openFile(filePath, arrayBufferToBase64(buffer));
       } else if (viewMode === 'excel') {
-        const buffer = await client.readFileBuffer(filePath);
+        const buffer = await resolved.client.readFileBuffer(readPath);
         store.openFile(filePath, arrayBufferToBase64(buffer));
       } else if (viewMode === 'pptx') {
-        const buffer = await client.readFileBuffer(filePath);
+        const buffer = await resolved.client.readFileBuffer(readPath);
         store.openFile(filePath, arrayBufferToBase64(buffer));
       } else if (viewMode === 'pdf') {
-        const buffer = await client.readFileBuffer(filePath);
+        const buffer = await resolved.client.readFileBuffer(readPath);
         store.openFile(filePath, arrayBufferToBase64(buffer));
       } else if (ext === 'doc') {
         store.openFile(filePath, '');
       } else {
-        const content = await client.readFile(filePath);
+        const content = await resolved.client.readFile(readPath);
         store.openFile(filePath, content);
       }
     } catch (e: any) {
@@ -170,7 +232,7 @@ export function useFileSystem() {
     const tab = store.activeTab;
     if (!tab) return;
     if (tab.viewMode !== 'code' && tab.viewMode !== 'html' && tab.viewMode !== 'markdown') {
-      error.value = 'Cannot save document previews';
+      error.value = t('fs.saveDocument');
       return;
     }
     error.value = null;
@@ -189,7 +251,7 @@ export function useFileSystem() {
           if (!result) return;
           savePath = result;
         } else {
-          const name = prompt('Enter filename:', tab.name)?.trim();
+          const name = prompt(t('fs.enterFilename'), tab.name)?.trim();
           if (!name) return;
           savePath = name.replace(/\\/g, '/');
         }
@@ -263,7 +325,7 @@ export function useFileSystem() {
   /** 创建新文件夹 */
   async function createFolder() {
     error.value = null;
-    const name = prompt('Folder name:')?.trim();
+    const name = prompt(t('fs.folderName'))?.trim();
     if (!name) return;
     try {
       const client = getClient();
@@ -283,7 +345,7 @@ export function useFileSystem() {
         localClient.value = client;
         activeClient.value = client;
         store.workspaceMode = 'local';
-        store.workspaceRoot = client.rootName || 'Local Folder';
+        store.workspaceRoots = [{ path: client.rootName || t('fs.localFolder'), name: client.rootName || t('fs.localFolder'), mode: 'local' }];
         await loadDirectory('.');
       }
     } catch (e: any) {
@@ -335,7 +397,7 @@ export function useFileSystem() {
     }
     activeClient.value = serverClient.value;
     store.workspaceMode = 'server';
-    store.workspaceRoot = 'Server Files';
+    store.workspaceRoots = [{ path: t('fs.serverFiles'), name: t('fs.serverFiles'), mode: 'server' }];
     await loadDirectory('.');
   }
 
@@ -345,8 +407,7 @@ export function useFileSystem() {
       const client = getClient();
       const root = await client.openFolder();
       if (root) {
-        store.workspaceMode = 'local';
-        store.workspaceRoot = root;
+        store.workspaceRoots = [{ path: root, name: root.split(/[\\/]/).pop() || root, mode: 'local' }];
         await loadDirectory('.');
       }
     } else if (env === 'browser') {
@@ -372,8 +433,7 @@ export function useFileSystem() {
           try {
             const root = await client.openFolderPath(droppedPath);
             if (root) {
-              store.workspaceMode = 'local';
-              store.workspaceRoot = root;
+              store.addWorkspaceRoot({ path: root, name: root.split(/[\\/]/).pop() || root, mode: 'local' });
               await loadDirectory('.');
               return true;
             }
@@ -383,7 +443,7 @@ export function useFileSystem() {
         }
 
         if (droppedPaths.length > 0) {
-          error.value = lastError || 'Drop a folder to open it.';
+          error.value = lastError || t('fs.dropFolder');
           return false;
         }
       }
@@ -394,8 +454,9 @@ export function useFileSystem() {
         const droppedClient = createBrowserLocalClient(dirHandle);
         localClient.value = droppedClient;
         activeClient.value = droppedClient;
-        store.workspaceMode = 'local';
-        store.workspaceRoot = droppedClient.rootName || 'Local Folder';
+        const rootName = droppedClient.rootName || t('fs.localFolder');
+        store.addWorkspaceRoot({ path: rootName, name: rootName, mode: 'local' });
+        rootClients.set(rootName, droppedClient);
         await loadDirectory('.');
         return true;
       }
@@ -407,8 +468,8 @@ export function useFileSystem() {
       });
 
       error.value = hasDirectoryHint
-        ? 'This browser cannot open dropped folders. Use Open Folder instead.'
-        : 'Drop a folder to open it.';
+        ? t('fs.browserUnsupported')
+        : t('fs.dropFolder');
       return false;
     } catch (e: any) {
       error.value = e.message;
@@ -605,6 +666,7 @@ export function useFileSystem() {
     deleteFile,
     undoDelete,
     createFolder,
+    readDirForPath,
     lastDeleted,
     showUndoNotification,
     setSaveAsHandler,

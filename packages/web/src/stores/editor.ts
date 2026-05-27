@@ -24,6 +24,13 @@ export interface EditorTab {
 /** 工作区模式 */
 export type WorkspaceMode = 'local' | 'server';
 
+/** 工作区根 */
+export interface WorkspaceRoot {
+  path: string;
+  name: string;
+  mode: WorkspaceMode;
+}
+
 let tabCounter = 0;
 
 /** 根据文件扩展名映射到 Monaco Editor 语言标识符 */
@@ -63,11 +70,24 @@ export const useEditorStore = defineStore('editor', () => {
   const tabs = ref<EditorTab[]>([]);
   const activeTabId = ref<string | null>(null);
   const fileTreeNodes = ref<any[]>([]);
-  const workspaceRoot = ref<string>('');
+  const workspaceRoots = ref<WorkspaceRoot[]>([]);
   const workspaceMode = ref<WorkspaceMode>('server');
 
   /** 当前活动标签页（计算属性） */
   const activeTab = computed(() => tabs.value.find(t => t.id === activeTabId.value) ?? null);
+
+  /** 首个工作区根路径（向后兼容） */
+  const workspaceRoot = computed(() => workspaceRoots.value[0]?.path || '');
+
+  /** 添加工作区根 */
+  function addWorkspaceRoot(root: WorkspaceRoot) {
+    if (!workspaceRoots.value.find(r => r.path === root.path)) {
+      workspaceRoots.value.push(root);
+      if (workspaceRoots.value.length === 1) {
+        workspaceMode.value = root.mode;
+      }
+    }
+  }
 
   /** 打开文件 —— 若已存在同路径标签则激活，否则新建标签 */
   const openFile = (filePath: string, content: string) => {
@@ -158,7 +178,8 @@ export const useEditorStore = defineStore('editor', () => {
   };
 
   return {
-    tabs, activeTabId, activeTab, fileTreeNodes, workspaceRoot, workspaceMode,
+    tabs, activeTabId, activeTab, fileTreeNodes, workspaceRoot, workspaceRoots, workspaceMode,
+    addWorkspaceRoot,
     openFile, newUntitled, closeTab, updateContent, saveTab, setActiveTab, setTabPath,
   };
 });

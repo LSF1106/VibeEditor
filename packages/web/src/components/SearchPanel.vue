@@ -6,7 +6,7 @@
         v-model="query"
         type="text"
         class="search-input"
-        placeholder="Search files..."
+        :placeholder="$t('searchPanel.placeholder')"
         @keyup.enter="doSearch"
       />
       <button class="search-btn" @click="doSearch" :disabled="!query.trim() || searching">
@@ -15,11 +15,11 @@
     </div>
 
     <div v-if="results.length > 0" class="search-summary">
-      {{ results.length }} result{{ results.length !== 1 ? 's' : '' }} in {{ fileCount }} file{{ fileCount !== 1 ? 's' : '' }}
+      {{ results.length }} {{ results.length === 1 ? $t('searchPanel.result') : $t('searchPanel.results') }} in {{ fileCount }} {{ fileCount === 1 ? $t('searchPanel.file') : $t('searchPanel.files') }}
     </div>
 
-    <div v-if="searching" class="search-status">Searching...</div>
-    <div v-else-if="searched && results.length === 0" class="search-status">No results found</div>
+    <div v-if="searching" class="search-status">{{ $t('searchPanel.searching') }}</div>
+    <div v-else-if="searched && results.length === 0" class="search-status">{{ $t('searchPanel.noResults') }}</div>
 
     <div class="search-results">
       <div v-for="(group, filePath) in groupedResults" :key="filePath" class="search-file-group">
@@ -34,7 +34,7 @@
           class="search-result-item"
           @click="$emit('open-file', filePath)"
         >
-          <span class="search-result-line">L{{ r.line }}</span>
+          <span class="search-result-line">{{ $t('statusBar.ln') }}{{ r.line }}</span>
           <span class="search-result-text">{{ r.text }}</span>
         </div>
         <div
@@ -42,7 +42,7 @@
           class="search-more"
           @click="$emit('open-file', filePath)"
         >
-          ...{{ (group as SearchResult[]).length - 3 }} more
+          ...{{ (group as SearchResult[]).length - 3 }}{{ $t('searchPanel.more') }}
         </div>
       </div>
     </div>

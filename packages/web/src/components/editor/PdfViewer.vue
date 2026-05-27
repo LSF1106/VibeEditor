@@ -1,7 +1,7 @@
 <template>
   <div class="pdf-viewer">
     <div v-if="!content" class="pdf-empty">
-      <p>Unable to preview this file.</p>
+      <p>{{ $t('viewer.unableToPreview') }}</p>
     </div>
     <iframe
       v-else-if="pdfUrl"
@@ -16,6 +16,9 @@
 
 <script setup lang="ts">
 import { ref, watch, onMounted, onBeforeUnmount } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps<{
   content: string;
@@ -24,6 +27,14 @@ const props = defineProps<{
 
 const pdfUrl = ref('');
 const error = ref('');
+
+let currentBlobUrl: string | null = null;
+
+function getAssetUrl(path: string): string {
+  const baseUrl = import.meta.env.BASE_URL || './';
+  const normalizedBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+  return new URL(`${normalizedBase}${path}`, window.location.href).href;
+}
 
 function base64ToBlob(b64: string): Blob {
   const binary = atob(b64);
@@ -35,12 +46,9 @@ function base64ToBlob(b64: string): Blob {
 }
 
 function revokeCurrentBlob() {
-  if (!pdfUrl.value) return;
-  try {
-    const url = new URL(pdfUrl.value, window.location.origin);
-    const blobUrl = url.searchParams.get('file');
-    if (blobUrl && blobUrl.startsWith('blob:')) URL.revokeObjectURL(blobUrl);
-  } catch {}
+  if (!currentBlobUrl) return;
+  URL.revokeObjectURL(currentBlobUrl);
+  currentBlobUrl = null;
 }
 
 function loadPdf() {
@@ -54,10 +62,11 @@ function loadPdf() {
   error.value = '';
   try {
     const blob = base64ToBlob(props.content);
-    const blobUrl = URL.createObjectURL(blob);
-    pdfUrl.value = `/pdfjs2/web/viewer.html?file=${encodeURIComponent(blobUrl)}`;
+    currentBlobUrl = URL.createObjectURL(blob);
+    pdfUrl.value = `${getAssetUrl('pdfjs2/web/viewer.html')}?file=${encodeURIComponent(currentBlobUrl)}`;
   } catch (e: any) {
-    error.value = e.message || 'Failed to load PDF';
+    pdfUrl.value = '';
+    error.value = e?.message || t('viewer.failedToLoadPdf');
   }
 }
 
@@ -85,7 +94,7 @@ onBeforeUnmount(() => revokeCurrentBlob());
   justify-content: center;
   height: 100%;
   background: var(--editor-bg, #1e1e1e);
-  color: #888;
+  color: var(--text-secondary, #888);
 }
 
 .pdf-error {

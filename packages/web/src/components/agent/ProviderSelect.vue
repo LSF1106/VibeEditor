@@ -9,7 +9,7 @@
     <div v-if="open" class="backdrop" @click="open = false"></div>
 
     <div v-if="open" class="menu">
-      <div class="menu-title">模型服务</div>
+      <div class="menu-title">{{ $t('providerSelect.modelService') }}</div>
       <div
         v-for="group in groups"
         :key="group.apiUrl"
@@ -35,7 +35,10 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 import type { ProviderConfig } from '../../composables/useProviderSettings';
+
+const { t } = useI18n();
 
 const props = defineProps<{
   providers: ProviderConfig[];
@@ -70,7 +73,7 @@ const groups = computed<Group[]>(() => {
 
 const label = computed(() => {
   const p = props.providers.find(p => p.id === props.activeId);
-  return p ? `${p.model} / ${p.name}` : '未选择';
+  return p ? `${p.model} / ${p.name}` : t('providerSelect.notSelected');
 });
 
 function pick(id: string) {

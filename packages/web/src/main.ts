@@ -1,11 +1,11 @@
-// VibeEditor 前端应用入口
-// 创建 Vue 应用 → 安装 Pinia 状态管理 → 挂载到 #app
 import { createApp } from 'vue';
 import { createPinia } from 'pinia';
+import { i18n } from './locales';
 import App from './App.vue';
 
 const app = createApp(App);
 const pinia = createPinia();
 
 app.use(pinia);
+app.use(i18n);
 app.mount('#app');

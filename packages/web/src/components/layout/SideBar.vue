@@ -5,7 +5,7 @@
     </div>
 
     <div v-if="sections.length === 0" class="sb-empty">
-      No content
+      {{ $t('sidebar.noContent') }}
     </div>
 
     <template v-for="(section, idx) in sections" :key="idx">
@@ -17,7 +17,7 @@
         </div>
         <div v-if="!collapsed.has(section.id)" class="sb-section-body">
           <slot :name="section.id" :section="section">
-            <div class="sb-section-empty">Empty</div>
+            <div class="sb-section-empty">{{ $t('sidebar.empty') }}</div>
           </slot>
         </div>
       </div>
