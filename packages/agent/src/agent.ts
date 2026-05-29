@@ -1,6 +1,9 @@
 import type { AgentDefinition, AgentContext, AgentResult } from './types/agent';
 import type { ILLMProvider } from './types/provider';
 import type { IAgentFileSystem } from './types/filesystem';
+import type { ITool } from './types/tool';
+import { ToolRegistry } from './tool-registry';
+import { createDefaultTools } from './tools/index';
 import { parseToolCalls, type ParsedTool } from './parser';
 
 /** Agent 运行事件 */
@@ -19,11 +22,31 @@ export class Agent {
   readonly definition: AgentDefinition;
   private provider: ILLMProvider;
   private fs: IAgentFileSystem;
+  private tools: ToolRegistry;
 
-  constructor(definition: AgentDefinition, provider: ILLMProvider, fs: IAgentFileSystem) {
+  constructor(definition: AgentDefinition, provider: ILLMProvider, fs: IAgentFileSystem, extraTools?: ITool[]) {
     this.definition = definition;
     this.provider = provider;
     this.fs = fs;
+    this.tools = new ToolRegistry();
+    for (const tool of createDefaultTools()) {
+      this.tools.register(tool);
+    }
+    if (extraTools) {
+      for (const tool of extraTools) {
+        this.tools.register(tool);
+      }
+    }
+  }
+
+  /** 注册额外工具（可在构造后动态添加，如 MCP 工具） */
+  registerTool(tool: ITool): void {
+    this.tools.register(tool);
+  }
+
+  /** 获取工具注册表（只读访问） */
+  getToolRegistry(): Readonly<ToolRegistry> {
+    return this.tools;
   }
 
   /** 执行单次对话，自动多轮 + 工具调用 */
@@ -83,7 +106,7 @@ export class Agent {
         break;
       }
 
-      const parsedTools = parseToolCalls(response);
+      const parsedTools = parseToolCalls(response, this.tools.getTagNames());
 
       if (parsedTools.length > 0) {
         let textBefore = response;
@@ -196,7 +219,7 @@ export class Agent {
         break;
       }
 
-      const parsedTools = parseToolCalls(response);
+      const parsedTools = parseToolCalls(response, this.tools.getTagNames());
 
       if (parsedTools.length > 0) {
         let textBefore = response;
@@ -248,93 +271,8 @@ export class Agent {
   }
 
   private async executeTool(tool: ParsedTool): Promise<string> {
-    switch (tool.type) {
-      case 'read_file':
-        return this.readFile(tool.params.path);
-      case 'list_dir':
-        return this.listDir(tool.params.path);
-      case 'search_code':
-        return this.searchCode(tool.params.pattern, tool.params.path, parseInt(tool.params.maxResults || '20'));
-      case 'delegate':
-        return `[Delegation to "${tool.params.agent}" recorded — Session will handle it]`;
-      default:
-        return `Unknown tool: ${tool.type}`;
-    }
-  }
-
-  private async readFile(filePath: string): Promise<string> {
-    try {
-      const content = await this.fs.readFile(filePath);
-      return `## File: ${filePath}\n\`\`\`\n${content}\n\`\`\``;
-    } catch (e: any) {
-      return `Error reading ${filePath}: ${e.message}`;
-    }
-  }
-
-  private async listDir(dirPath: string): Promise<string> {
-    try {
-      const entries = await this.fs.readDir(dirPath);
-      if (entries.length === 0) return `## Directory: ${dirPath} (empty)`;
-
-      const lines = entries
-        .sort((a, b) => {
-          if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
-          return a.name.localeCompare(b.name);
-        })
-        .map(e => `${e.isDirectory ? '📁' : '📄'} ${e.name}${e.isDirectory ? '/' : ''}`);
-
-      return `## Directory: ${dirPath}\n${lines.join('\n')}`;
-    } catch (e: any) {
-      return `Error listing ${dirPath}: ${e.message}`;
-    }
-  }
-
-  private async searchCode(pattern: string, searchPath?: string, maxResults = 20): Promise<string> {
-    const results: string[] = [];
-    let count = 0;
-
-    const matchInContent = (relPath: string, content: string) => {
-      if (count >= maxResults) return;
-      let regex: RegExp;
-      try {
-        regex = new RegExp(pattern, 'gi');
-      } catch {
-        return;
-      }
-      const lines = content.split('\n');
-      for (let i = 0; i < lines.length && count < maxResults; i++) {
-        if (regex.test(lines[i])) {
-          regex.lastIndex = 0;
-          results.push(`${relPath}:${i + 1}: ${lines[i].trim().substring(0, 120)}`);
-          count++;
-        }
-      }
-    };
-
-    const walkDir = async (dirPath: string) => {
-      if (count >= maxResults) return;
-      try {
-        const entries = await this.fs.readDir(dirPath);
-        for (const entry of entries) {
-          if (count >= maxResults) return;
-          const entryPath = dirPath === '.' ? entry.name : `${dirPath}/${entry.name}`;
-
-          if (entry.isDirectory) {
-            if (entry.name === 'node_modules' || entry.name === '.git' || entry.name === 'dist') continue;
-            await walkDir(entryPath);
-          } else {
-            try {
-              const content = await this.fs.readFile(entryPath);
-              matchInContent(entryPath, content);
-            } catch { /* skip */ }
-          }
-        }
-      } catch { /* skip */ }
-    };
-
-    await walkDir(searchPath || '.');
-
-    if (results.length === 0) return `No matches found for "${pattern}"`;
-    return `## Search results for "${pattern}":\n${results.join('\n')}`;
+    const impl = this.tools.get(tool.type);
+    if (!impl) return `Unknown tool: ${tool.type}`;
+    return impl.execute(tool.params, { fs: this.fs });
   }
 }

@@ -3,6 +3,8 @@ import { Session } from './session';
 import type { AgentDefinition, AgentContext } from './types/agent';
 import type { IAgentFileSystem } from './types/filesystem';
 import type { OpenAILikeProvider } from './provider';
+import { ToolRegistry } from './tool-registry';
+import { createDefaultTools } from './tools/index';
 
 /** @deprecated Use Agent + Session instead */
 export class AgentLoop {
@@ -52,13 +54,15 @@ export class AgentLoop {
   }
 
   private defaultSystemPrompt(mode: string): string {
+    const registry = new ToolRegistry();
+    for (const tool of createDefaultTools()) {
+      registry.register(tool);
+    }
+
     return [
       'You are an autonomous coding agent. Your goal is to understand, plan, and execute code changes.',
       '',
-      '## Available Tools',
-      '<read_file path="path/to/file"/> — Read a file not in context',
-      '<list_dir path="path/to/dir"/> — List directory contents',
-      '<search_code pattern="regex" [path="dir" maxResults="20"]/> — Search code',
+      registry.buildSystemPromptSection(),
       '',
       '## Making Changes',
       'When ready to make changes, output:',

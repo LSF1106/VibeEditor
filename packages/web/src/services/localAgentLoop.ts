@@ -1,4 +1,4 @@
-import { Agent, type AgentConfig, type AgentContext, type IAgentFileSystem, type ILLMProvider } from '@vibeeditor/agent';
+import { Agent, ToolRegistry, createDefaultTools, type AgentConfig, type AgentContext, type IAgentFileSystem, type ILLMProvider } from '@vibeeditor/agent';
 import type { FileServiceClient } from './fileService';
 import { i18n } from '../locales';
 
@@ -27,13 +27,15 @@ function createAgentFS(client: FileServiceClient): IAgentFileSystem {
 function buildSystemPrompt(config: AgentConfig): string {
   if (config.systemPrompt) return config.systemPrompt;
 
+  const registry = new ToolRegistry();
+  for (const tool of createDefaultTools()) {
+    registry.register(tool);
+  }
+
   return [
     'You are an autonomous coding agent. Your goal is to understand, plan, and execute code changes.',
     '',
-    '## Available Tools',
-    '<read_file path="path/to/file"/> — Read a file not in context',
-    '<list_dir path="path/to/dir"/> — List directory contents',
-    '<search_code pattern="regex" [path="dir" maxResults="20"]/> — Search code',
+    registry.buildSystemPromptSection(),
     '',
     '## Making Changes',
     'When ready to make changes, output:',

@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { OpenAILikeProvider, Agent, Session, executeEdits, type AgentContext, type AgentConfig, type AgentEditResult } from '@vibeeditor/agent';
+import { OpenAILikeProvider, Agent, Session, executeEdits, ToolRegistry, createDefaultTools, type AgentContext, type AgentConfig, type AgentEditResult } from '@vibeeditor/agent';
 import { LocalFileSystem } from '@vibeeditor/core';
 
 const router = Router();
@@ -69,29 +69,32 @@ router.post('/stream', async (req: Request, res: Response) => {
         {
           id: 'main',
           name: 'Main Agent',
-          systemPrompt: config.systemPrompt || [
-            'You are an autonomous coding agent. Your goal is to understand, plan, and execute code changes.',
-            '',
-            '## Available Tools',
-            '<read_file path="path/to/file"/> — Read a file not in context',
-            '<list_dir path="path/to/dir"/> — List directory contents',
-            '<search_code pattern="regex" [path="dir" maxResults="20"]/> — Search code',
-            '',
-            '## Making Changes',
-            'When ready to make changes, output:',
-            '<edit path="path/to/file">',
-            '```language',
-            'complete file content',
-            '```',
-            '</edit>',
-            '',
-            '## Rules',
-            '1. Read files before editing them',
-            '2. Make focused, minimal changes',
-            '3. In <edit> blocks, provide COMPLETE file content',
-            '4. Think step by step: explore → plan → execute → explain',
-            `5. Current mode: ${config.mode}`,
-          ].join('\n'),
+          systemPrompt: config.systemPrompt || (() => {
+            const registry = new ToolRegistry();
+            for (const tool of createDefaultTools()) {
+              registry.register(tool);
+            }
+            return [
+              'You are an autonomous coding agent. Your goal is to understand, plan, and execute code changes.',
+              '',
+              registry.buildSystemPromptSection(),
+              '',
+              '## Making Changes',
+              'When ready to make changes, output:',
+              '<edit path="path/to/file">',
+              '```language',
+              'complete file content',
+              '```',
+              '</edit>',
+              '',
+              '## Rules',
+              '1. Read files before editing them',
+              '2. Make focused, minimal changes',
+              '3. In <edit> blocks, provide COMPLETE file content',
+              '4. Think step by step: explore → plan → execute → explain',
+              `5. Current mode: ${config.mode}`,
+            ].join('\n');
+          })(),
           temperature: config.temperature,
           maxTokens: config.maxTokens,
         },

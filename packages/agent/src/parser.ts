@@ -1,6 +1,6 @@
 /** 从 LLM 回复中解析出的工具调用 */
 export interface ParsedTool {
-  type: 'read_file' | 'list_dir' | 'search_code' | 'edit' | 'delegate';
+  type: string;
   params: Record<string, string>;
 }
 
@@ -19,7 +19,7 @@ export interface ParsedEdit {
  *   <search_code pattern="function" path="src/" maxResults="20"/>
  *   <delegate agent="sub-agent-id" task="task description"/>
  */
-export function parseToolCalls(text: string): ParsedTool[] {
+export function parseToolCalls(text: string, registeredTags?: string[]): ParsedTool[] {
   const tools: ParsedTool[] = [];
   const re = /<(\w+) ([^>]+)?\s*\/?>/g;
   let match: RegExpExecArray | null;
@@ -36,15 +36,8 @@ export function parseToolCalls(text: string): ParsedTool[] {
       params[attrMatch[1]] = attrMatch[2];
     }
 
-    if (tag === 'read_file' && params.path) {
-      tools.push({ type: 'read_file', params });
-    } else if (tag === 'list_dir' && params.path) {
-      tools.push({ type: 'list_dir', params });
-    } else if (tag === 'search_code' && params.pattern) {
-      tools.push({ type: 'search_code', params });
-    } else if (tag === 'delegate' && params.agent) {
-      tools.push({ type: 'delegate', params });
-    }
+    if (registeredTags && !registeredTags.includes(tag)) continue;
+    tools.push({ type: tag, params });
   }
 
   return tools;
