@@ -1,4 +1,6 @@
-import { IAgentFileSystem, EditOperation, AgentEditResult } from './types';
+import type { IAgentFileSystem } from './types/filesystem';
+import type { EditOperation } from './types/edit';
+import type { AgentEditResult } from './types/message';
 
 export interface ExecutionResult {
   success: boolean;

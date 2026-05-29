@@ -1,4 +1,5 @@
-import { AgentContext, AgentMessage } from './types';
+import type { AgentContext } from './types/agent';
+import type { AgentMessage } from './types/message';
 
 export function createEmptyContext(): AgentContext {
   return {

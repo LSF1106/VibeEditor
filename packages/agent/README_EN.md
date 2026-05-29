@@ -13,7 +13,12 @@ Standalone AI Agent framework for VibeEditor — provides LLM Provider, Agent Lo
 ```
 src/
 ├── index.ts       # Barrel export entry point
-├── types.ts       # Core type definitions
+├── types/
+│   ├── edit.ts        # TextSelection, EditOperation
+│   ├── message.ts     # AgentEditResult, AgentMessage
+│   ├── agent.ts       # AgentMode, AgentConfig, AgentContext
+│   ├── provider.ts    # IAgentProvider
+│   └── filesystem.ts  # FileEntry, IAgentFileSystem
 ├── context.ts     # Context construction utilities
 ├── executor.ts    # Edit execution engine
 ├── parser.ts      # LLM response parser
@@ -23,21 +28,17 @@ src/
 
 ## Module Details
 
-### 1. Type System (`types.ts`)
+### 1. Type System (`types/`)
 
-All agent-related types, self-contained with no external dependencies:
+All agent-related types split by responsibility into separate files, self-contained with no external dependencies:
 
-| Type | Description |
-|------|-------------|
-| `AgentMode` | Work mode: `'build'` (coding) / `'plan'` (analysis) |
-| `AgentMessage` | Chat message (id, role, content, timestamp, editOperations) |
-| `AgentEditResult` | Edit result (filePath + operations + description) |
-| `AgentConfig` | Runtime config (mode, model, apiUrl, apiKey, systemPrompt, temperature, maxTokens) |
-| `AgentContext` | Environment snapshot (openFiles, fileTree, cursorPosition, selection, conversationHistory) |
-| `IAgentProvider` | AI backend plugin contract (initialize, sendMessage, streamMessage, dispose) |
-| `EditOperation` | Edit operation (insert / delete / replace, line/column-based positioning) |
-| `TextSelection` | Text selection range (start/end line & column) |
-| `IAgentFileSystem` | Minimal file system interface for agent needs (readFile, writeFile, exists, readDir) |
+| File | Types | Description |
+|------|-------|-------------|
+| `types/edit.ts` | `TextSelection`, `EditOperation` | Text selection range, edit operation (insert / delete / replace) |
+| `types/message.ts` | `AgentEditResult`, `AgentMessage` | Edit result, chat message |
+| `types/agent.ts` | `AgentMode`, `AgentConfig`, `AgentContext` | Work mode, runtime config, environment snapshot |
+| `types/provider.ts` | `IAgentProvider` | AI backend plugin contract (initialize, sendMessage, streamMessage, dispose) |
+| `types/filesystem.ts` | `FileEntry`, `IAgentFileSystem` | File entry, minimal file system interface for agent needs |
 
 ### 2. Context Builder (`context.ts`)
 

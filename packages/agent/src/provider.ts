@@ -1,4 +1,6 @@
-import type { IAgentProvider, AgentConfig, AgentContext, AgentMessage } from './types';
+import type { IAgentProvider } from './types/provider';
+import type { AgentConfig, AgentContext } from './types/agent';
+import type { AgentMessage } from './types/message';
 
 interface LLMConfig {
   apiUrl: string;
