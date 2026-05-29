@@ -3,10 +3,11 @@
     <div v-if="!content" class="pdf-empty">
       <p>{{ $t('viewer.unableToPreview') }}</p>
     </div>
-    <iframe
-      v-else-if="pdfUrl"
-      :src="pdfUrl"
-      class="pdf-iframe"
+    <embed
+      v-else-if="blobUrl"
+      :src="blobUrl"
+      type="application/pdf"
+      class="pdf-embed"
       width="100%"
       height="100%"
     />
@@ -25,16 +26,10 @@ const props = defineProps<{
   fileName: string;
 }>();
 
-const pdfUrl = ref('');
+const blobUrl = ref('');
 const error = ref('');
 
 let currentBlobUrl: string | null = null;
-
-function getAssetUrl(path: string): string {
-  const baseUrl = import.meta.env.BASE_URL || './';
-  const normalizedBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
-  return new URL(`${normalizedBase}${path}`, window.location.href).href;
-}
 
 function base64ToBlob(b64: string): Blob {
   const binary = atob(b64);
@@ -55,7 +50,7 @@ function loadPdf() {
   revokeCurrentBlob();
 
   if (!props.content) {
-    pdfUrl.value = '';
+    blobUrl.value = '';
     return;
   }
 
@@ -63,10 +58,12 @@ function loadPdf() {
   try {
     const blob = base64ToBlob(props.content);
     currentBlobUrl = URL.createObjectURL(blob);
-    pdfUrl.value = `${getAssetUrl('pdfjs2/web/viewer.html')}?file=${encodeURIComponent(currentBlobUrl)}`;
+    blobUrl.value = currentBlobUrl;
+    console.log('[PdfViewer] PDF loaded, blob size:', blob.size, 'bytes');
   } catch (e: any) {
-    pdfUrl.value = '';
+    blobUrl.value = '';
     error.value = e?.message || t('viewer.failedToLoadPdf');
+    console.error('[PdfViewer] Failed to load PDF:', e);
   }
 }
 
@@ -84,7 +81,7 @@ onBeforeUnmount(() => revokeCurrentBlob());
   overflow: hidden;
 }
 
-.pdf-iframe {
+.pdf-embed {
   border: none;
 }
 
