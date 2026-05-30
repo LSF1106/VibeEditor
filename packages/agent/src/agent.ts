@@ -1,10 +1,10 @@
-import type { AgentDefinition, AgentContext, AgentResult } from './types/agent';
-import type { ILLMProvider } from './types/provider';
+import type { AgentDefinition, AgentContext, AgentResult, AgentConfig } from './types/agent';
 import type { IAgentFileSystem } from './types/filesystem';
 import type { ITool } from './types/tool';
 import { ToolRegistry } from './tool-registry';
 import { createDefaultTools } from './tools/index';
 import { parseToolCalls, type ParsedTool } from './parser';
+import { createOpenAILLMProvider } from './openai-client';
 
 /** Agent 运行事件 */
 export interface AgentEvent {
@@ -20,13 +20,13 @@ const DEFAULT_MAX_TURNS = 15;
 
 export class Agent {
   readonly definition: AgentDefinition;
-  private provider: ILLMProvider;
+  private provider: ReturnType<typeof createOpenAILLMProvider>;
   private fs: IAgentFileSystem;
   private tools: ToolRegistry;
 
-  constructor(definition: AgentDefinition, provider: ILLMProvider, fs: IAgentFileSystem, extraTools?: ITool[]) {
+  constructor(definition: AgentDefinition, config: AgentConfig, fs: IAgentFileSystem, extraTools?: ITool[]) {
     this.definition = definition;
-    this.provider = provider;
+    this.provider = createOpenAILLMProvider(config);
     this.fs = fs;
     this.tools = new ToolRegistry();
     for (const tool of createDefaultTools()) {

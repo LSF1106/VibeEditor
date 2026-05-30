@@ -1,8 +1,7 @@
 import { Agent, type AgentEvent } from './agent';
 import { Session } from './session';
-import type { AgentDefinition, AgentContext } from './types/agent';
+import type { AgentDefinition, AgentContext, AgentConfig } from './types/agent';
 import type { IAgentFileSystem } from './types/filesystem';
-import type { OpenAILikeProvider } from './provider';
 import { ToolRegistry } from './tool-registry';
 import { createDefaultTools } from './tools/index';
 
@@ -15,8 +14,7 @@ export class AgentLoop {
   }
 
   async run(
-    provider: OpenAILikeProvider,
-    config: { mode: string; systemPrompt?: string; temperature?: number; maxTokens?: number },
+    config: AgentConfig,
     initialMessage: string,
     context: AgentContext,
     writeSSE: (data: Record<string, unknown>) => void
@@ -29,7 +27,7 @@ export class AgentLoop {
       maxTokens: config.maxTokens,
     };
 
-    const agent = new Agent(definition, provider, this.fs);
+    const agent = new Agent(definition, config, this.fs);
     await agent.execute(initialMessage, context, (e: AgentEvent) => {
       switch (e.type) {
         case 'chunk':

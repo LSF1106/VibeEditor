@@ -22,12 +22,14 @@ import { ToolCatalog } from './mcp/tool-catalog';
 import type { McpConfig } from './mcp/config';
 import type { McpToolInfo } from './mcp/manager';
 import type { AgentDefinition, AgentContext } from './types/agent';
-import type { ILLMProvider } from './types/provider';
 import type { IAgentFileSystem, FileEntry } from './types/filesystem';
-// ====================== DeepSeek 配置 ======================
+import type { AgentConfig } from './types/agent';
 
-const LLM_CONFIG = {
-  apiUrl: 'https://api.deepseek.com/v1/chat/completions',
+// ====================== LLM 配置 ======================
+
+const AGENT_CONFIG: AgentConfig = {
+  mode: 'build',
+  apiUrl: 'https://api.deepseek.com/v1',
   apiKey: 'sk-2d20e6d859c843f8852a82c56fdecfcb',
   model: 'deepseek-v4-flash',
 };
@@ -60,69 +62,6 @@ const CODE_REVIEWER: AgentDefinition = {
 Provide a concise review with actionable suggestions.`,
   maxTurns: 3,
 };
-
-// ====================== LLM Provider (实现 ILLMProvider) ======================
-
-/** 创建 DeepSeek API 的 ILLMProvider 实例 */
-function createLLMProvider(): ILLMProvider {
-  async function chatImpl(messages: { role: string; content: string }[]): Promise<string> {
-    const response = await fetch(LLM_CONFIG.apiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${LLM_CONFIG.apiKey}` },
-      body: JSON.stringify({ model: LLM_CONFIG.model, messages, stream: false }),
-    });
-    if (!response.ok) throw new Error(`API error ${response.status}: ${await response.text()}`);
-    const data = await response.json() as any;
-    return data.choices?.[0]?.message?.content || '';
-  }
-
-  async function chatStreamImpl(
-    messages: { role: string; content: string }[],
-    onChunk: (type: 'thinking' | 'content', text: string) => void
-  ): Promise<string> {
-    const response = await fetch(LLM_CONFIG.apiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${LLM_CONFIG.apiKey}` },
-      body: JSON.stringify({ model: LLM_CONFIG.model, messages, stream: true }),
-    });
-    if (!response.ok) throw new Error(`API error ${response.status}: ${await response.text()}`);
-
-    const reader = response.body?.getReader();
-    if (!reader) throw new Error('No response body');
-
-    const decoder = new TextDecoder();
-    let buffer = '';
-    let fullContent = '';
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed || !trimmed.startsWith('data: ')) continue;
-        const dataStr = trimmed.slice(6);
-        if (dataStr === '[DONE]') continue;
-        try {
-          const json = JSON.parse(dataStr);
-          const delta = json.choices?.[0]?.delta;
-          if (delta?.reasoning_content) {
-            onChunk('thinking', delta.reasoning_content);
-          }
-          if (delta?.content) {
-            fullContent += delta.content;
-            onChunk('content', delta.content);
-          }
-        } catch { /* skip */ }
-      }
-    }
-    return fullContent;
-  }
-
-  return { chat: chatImpl, chatStream: chatStreamImpl };
-}
 
 // ====================== 文件系统 (实现 IAgentFileSystem) ======================
 
@@ -202,11 +141,10 @@ function buildContext(_workDir: string): AgentContext {
 // ====================== Agent 对话模式（默认） ======================
 
 async function runAgentLoop(mcpManager: McpManager | null, mcpTools: McpToolInfo[], workDir: string): Promise<void> {
-  const provider = createLLMProvider();
   const fileSystem = createNodeFileSystem(workDir);
 
   // 创建主 Agent（内置工具由 Agent 构造器自动注册）
-  const mainAgent = new Agent(MAIN_AGENT, provider, fileSystem);
+  const mainAgent = new Agent(MAIN_AGENT, AGENT_CONFIG, fileSystem);
 
   // 注册 MCP 工具
   if (mcpManager) {
@@ -217,7 +155,7 @@ async function runAgentLoop(mcpManager: McpManager | null, mcpTools: McpToolInfo
   }
 
   // 创建子 Agent
-  const reviewer = new Agent(CODE_REVIEWER, provider, fileSystem);
+  const reviewer = new Agent(CODE_REVIEWER, AGENT_CONFIG, fileSystem);
 
   // 创建 Session
   const session = new Session('cli-session', fileSystem, mainAgent);
@@ -226,7 +164,7 @@ async function runAgentLoop(mcpManager: McpManager | null, mcpTools: McpToolInfo
   const toolCount = mainAgent.getToolRegistry().size;
   const mcpCount = mcpManager ? mcpManager.serverCount : 0;
 
-  console.log(`\n🤖 Model: ${LLM_CONFIG.model}`);
+  console.log(`\n🤖 Model: ${AGENT_CONFIG.model}`);
   console.log(`🔧 Tools: ${toolCount} (built-in)${mcpCount ? ` + ${mcpCount} MCP server(s)` : ''}`);
   console.log(`📁 Work dir: ${workDir}`);
   console.log('Commands: /exit, /clear, /tools\n');
@@ -452,9 +390,8 @@ async function main(): Promise<void> {
   switch (args.mode) {
     case 'list': {
       console.log('\n--- Built-in Tools ---');
-      const provider = createLLMProvider();
       const fs = createNodeFileSystem(args.workDir);
-      const agent = new Agent(MAIN_AGENT, provider, fs);
+      const agent = new Agent(MAIN_AGENT, AGENT_CONFIG, fs);
       for (const name of agent.getToolRegistry().getTagNames()) {
         const tool = agent.getToolRegistry().get(name);
         if (tool) console.log(`  <${name}/> — ${tool.description}`);

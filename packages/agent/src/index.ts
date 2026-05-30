@@ -1,7 +1,6 @@
 export * from './types/edit';
 export * from './types/message';
 export * from './types/agent';
-export * from './types/provider';
 export * from './types/filesystem';
 export * from './types/tool';
 export * from './tool-registry';
@@ -13,7 +12,7 @@ export * from './tools/delegate';
 export * from './context';
 export * from './executor';
 export * from './parser';
-export * from './provider';
+export * from './openai-client';
 export * from './loop';
 export * from './agent';
 export * from './session';

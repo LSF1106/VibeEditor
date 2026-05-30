@@ -163,7 +163,7 @@
       </div>
       <div v-if="showAgent" class="agent-resize-handle" @mousedown="startAgentResize"></div>
       <div v-if="showAgent" class="agent-sidebar" :style="{ width: agentWidth + 'px' }">
-        <AgentPanel :file-client="fs.client" @apply-edits="handleApplyEdits" @undo-edits="undoLastEdits" />
+        <AgentPanel @apply-edits="handleApplyEdits" @undo-edits="undoLastEdits" />
       </div>
     </div>
     <StatusBar

@@ -1,13 +1,19 @@
 import { ref } from 'vue';
 import { createAgentService } from '../services/agentService';
 import type { AgentConfig, StreamEvent } from '../services/agentService';
-import type { AgentContext } from '@vibeeditor/agent';
 import type { ProviderConfig } from './useProviderSettings';
-import type { FileServiceClient } from '../services/fileService';
-import { parseEditsFromText, type ParsedEdit } from '@vibeeditor/agent';
-import { runLocalAgentLoop } from '../services/localAgentLoop';
+import { parseEditsFromText, type ParsedEdit } from '../services/editParser';
 import { useEditorStore } from '../stores/editor';
 import { getEditorInstance } from '../services/editorInstance';
+
+/** Agent 运行上下文 —— 当前 IDE 环境快照 */
+export interface AgentContext {
+  openFiles: { path: string; content: string }[];
+  fileTree: string[];
+  cursorPosition?: { file: string; line: number; column: number };
+  selection?: { file: string; text: string; startLine: number; endLine: number };
+  conversationHistory: { id: string; role: string; content: string; timestamp: number }[];
+}
 
 /** 聊天消息 */
 export interface ChatMessage {
@@ -131,8 +137,7 @@ export function useAgent() {
     content: string,
     provider?: ProviderConfig | null,
     onChunk?: () => void,
-    activeFilePath?: string,
-    localClient?: FileServiceClient | null
+    activeFilePath?: string
   ) {
     const userMsg: ChatMessage = {
       id: `msg_${Date.now()}`,
@@ -162,60 +167,38 @@ export function useAgent() {
       const ctx = buildAgentContext(activeFilePath);
       const history = messages.value.slice(0, -1).filter(m => m.id !== assistantMsgId);
 
-      if (store.workspaceMode === 'local' && localClient) {
-        // Local mode: thinking display not supported (non-streaming LLM call)
-        const fullContent = await runLocalAgentLoop(
-          localClient,
-          buildRequestConfig(provider),
-          content,
-          { ...ctx, conversationHistory: history as AgentContext['conversationHistory'] },
-          {
-            onChunk: (chunk: string) => {
-              const msg = messages.value.find(m => m.id === assistantMsgId);
-              if (msg) msg.content += chunk;
-              if (onChunk) onChunk();
-            },
-            onToolStart: (message: string) => { toolStatus.value = message; },
-            onToolEnd: () => { toolStatus.value = ''; },
+      const streamCtx = {
+        ...ctx,
+        conversationHistory: history,
+        workspaceRoot: store.workspaceRoot || undefined,
+      };
+      await service.streamMessage(
+        content,
+        streamCtx,
+        buildRequestConfig(provider),
+        (type: 'thinking' | 'content', text: string) => {
+          const msg = messages.value.find(m => m.id === assistantMsgId);
+          if (!msg) return;
+          if (type === 'thinking') {
+            msg.thinking = (msg.thinking || '') + text;
+            thinkingActive.value = true;
+          } else {
+            msg.content += text;
           }
-        );
-
-        const msg = messages.value.find(m => m.id === assistantMsgId);
-        if (msg) msg.content = fullContent;
-      } else {
-        const streamCtx = {
-          ...ctx,
-          conversationHistory: history,
-          workspaceRoot: store.workspaceRoot || undefined,
-        };
-        await service.streamMessage(
-          content,
-          streamCtx,
-          buildRequestConfig(provider),
-          (type: 'thinking' | 'content', text: string) => {
-            const msg = messages.value.find(m => m.id === assistantMsgId);
-            if (!msg) return;
-            if (type === 'thinking') {
-              msg.thinking = (msg.thinking || '') + text;
-              thinkingActive.value = true;
-            } else {
-              msg.content += text;
-            }
-            if (onChunk) onChunk();
-          },
-          (event: StreamEvent) => {
-            if (event.type === 'tool_start') {
-              toolStatus.value = event.message || '';
-            } else if (event.type === 'tool_end') {
-              toolStatus.value = '';
-            } else if (event.type === 'thinking_start') {
-              thinkingActive.value = true;
-            } else if (event.type === 'thinking_end') {
-              thinkingActive.value = false;
-            }
+          if (onChunk) onChunk();
+        },
+        (event: StreamEvent) => {
+          if (event.type === 'tool_start') {
+            toolStatus.value = event.message || '';
+          } else if (event.type === 'tool_end') {
+            toolStatus.value = '';
+          } else if (event.type === 'thinking_start') {
+            thinkingActive.value = true;
+          } else if (event.type === 'thinking_end') {
+            thinkingActive.value = false;
           }
-        );
-      }
+        }
+      );
 
       const msg = messages.value.find(m => m.id === assistantMsgId);
       if (msg) {

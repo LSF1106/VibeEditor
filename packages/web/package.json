@@ -11,7 +11,6 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@vibeeditor/agent": "0.1.0",
     "@vibeeditor/core": "0.1.0",
     "@vue-office/excel": "^1.7.14",
     "@vue-office/pptx": "^1.0.1",

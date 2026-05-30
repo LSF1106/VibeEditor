@@ -1,7 +1,15 @@
-import type { AgentConfig } from '@vibeeditor/agent';
 import { i18n } from '../locales';
 
-export type { AgentConfig };
+/** Agent 运行配置 */
+export interface AgentConfig {
+  mode: 'build' | 'plan';
+  model?: string;
+  apiUrl?: string;
+  apiKey?: string;
+  systemPrompt?: string;
+  temperature?: number;
+  maxTokens?: number;
+}
 
 /** 对话消息 */
 export interface AgentMessage {

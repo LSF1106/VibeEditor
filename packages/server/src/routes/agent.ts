@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { OpenAILikeProvider, Agent, Session, executeEdits, ToolRegistry, createDefaultTools, type AgentContext, type AgentConfig, type AgentEditResult } from '@vibeeditor/agent';
+import { Agent, Session, executeEdits, createOpenAILLMProvider, buildMessages, type AgentContext, type AgentConfig, type AgentEditResult } from '@vibeeditor/agent';
 import { LocalFileSystem } from '@vibeeditor/core';
 
 const router = Router();
@@ -16,6 +16,27 @@ function buildAgentConfig(body: Record<string, unknown>): AgentConfig {
   };
 }
 
+function buildDefaultSystemPrompt(mode: string): string {
+  return [
+    'You are an autonomous coding agent. Your goal is to understand, plan, and execute code changes.',
+    '',
+    '## Making Changes',
+    'When ready to make changes, output:',
+    '<edit path="path/to/file">',
+    '```language',
+    'complete file content',
+    '```',
+    '</edit>',
+    '',
+    '## Rules',
+    '1. Read files before editing them',
+    '2. Make focused, minimal changes',
+    '3. In <edit> blocks, provide COMPLETE file content',
+    '4. Think step by step: explore → plan → execute → explain',
+    `5. Current mode: ${mode}`,
+  ].join('\n');
+}
+
 router.post('/chat', async (req: Request, res: Response) => {
   try {
     const { message, context } = req.body;
@@ -26,13 +47,16 @@ router.post('/chat', async (req: Request, res: Response) => {
       return;
     }
 
-    const provider = new OpenAILikeProvider();
-    await provider.initialize(config);
+    const llm = createOpenAILLMProvider(config);
+    const messages = buildMessages(config, message, context as AgentContext);
+    const content = await llm.chat(messages);
 
-    const response = await provider.sendMessage(message, context as AgentContext);
-    provider.dispose();
-
-    res.json(response);
+    res.json({
+      id: `agent_${Date.now()}`,
+      role: 'assistant',
+      content,
+      timestamp: Date.now(),
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     res.status(500).json({ error: msg });
@@ -59,9 +83,6 @@ router.post('/stream', async (req: Request, res: Response) => {
     res.write(`data: ${JSON.stringify(data)}\n\n`);
   };
 
-  const provider = new OpenAILikeProvider();
-  await provider.initialize(config);
-
   try {
     if (config.mode === 'build') {
       const fs = new LocalFileSystem(rootPath);
@@ -69,36 +90,11 @@ router.post('/stream', async (req: Request, res: Response) => {
         {
           id: 'main',
           name: 'Main Agent',
-          systemPrompt: config.systemPrompt || (() => {
-            const registry = new ToolRegistry();
-            for (const tool of createDefaultTools()) {
-              registry.register(tool);
-            }
-            return [
-              'You are an autonomous coding agent. Your goal is to understand, plan, and execute code changes.',
-              '',
-              registry.buildSystemPromptSection(),
-              '',
-              '## Making Changes',
-              'When ready to make changes, output:',
-              '<edit path="path/to/file">',
-              '```language',
-              'complete file content',
-              '```',
-              '</edit>',
-              '',
-              '## Rules',
-              '1. Read files before editing them',
-              '2. Make focused, minimal changes',
-              '3. In <edit> blocks, provide COMPLETE file content',
-              '4. Think step by step: explore → plan → execute → explain',
-              `5. Current mode: ${config.mode}`,
-            ].join('\n');
-          })(),
+          systemPrompt: config.systemPrompt || buildDefaultSystemPrompt(config.mode),
           temperature: config.temperature,
           maxTokens: config.maxTokens,
         },
-        provider,
+        config,
         fs
       );
       const session = new Session('default', fs, agent);
@@ -123,7 +119,9 @@ router.post('/stream', async (req: Request, res: Response) => {
         }
       });
     } else {
-      await provider.streamMessage(message, context as AgentContext, (type, text) => {
+      const llm = createOpenAILLMProvider(config);
+      const messages = buildMessages(config, message, context as AgentContext);
+      await llm.chatStream(messages, (type, text) => {
         if (type === 'thinking') {
           writeSSE({ thinking: text });
         } else {
@@ -136,8 +134,6 @@ router.post('/stream', async (req: Request, res: Response) => {
     const msg = err instanceof Error ? err.message : String(err);
     writeSSE({ error: msg });
     writeSSE({ done: true });
-  } finally {
-    provider.dispose();
   }
 });
 
