@@ -1,4 +1,4 @@
-import type { ITool, ToolInputSchema, ToolExecutionContext } from '../types/tool';
+import type { ITool, ToolInputSchema, ToolExecutionContext, ToolAnnotations } from '../types/tool';
 
 const inputSchema: ToolInputSchema = {
   type: 'object',
@@ -10,11 +10,18 @@ const inputSchema: ToolInputSchema = {
   required: ['pattern'],
 };
 
+const annotations: ToolAnnotations = {
+  readOnlyHint: true,
+  idempotentHint: true,
+  openWorldHint: false,
+};
+
 export class SearchCodeTool implements ITool {
   readonly name = 'search_code';
   readonly description = 'Search code with regex pattern';
   readonly usage = '<search_code pattern="regex" [path="dir" maxResults="20"]/>';
   readonly inputSchema = inputSchema;
+  readonly annotations = annotations;
 
   async execute(params: Record<string, string>, context: ToolExecutionContext): Promise<string> {
     const pattern = params.pattern;

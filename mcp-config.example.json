@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "local-filesystem": {
+      "type": "stdio",
+      "name": "Filesystem Server",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "."]
+    },
+    "remote-sse": {
+      "type": "sse",
+      "name": "Remote SSE Server",
+      "url": "http://localhost:3001/sse"
+    },
+    "remote-http": {
+      "type": "http",
+      "name": "Remote HTTP Server",
+      "url": "https://mcp.ifconfig.cc"
+    }
+  }
+}

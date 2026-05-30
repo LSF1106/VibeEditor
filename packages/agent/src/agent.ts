@@ -61,6 +61,12 @@ export class Agent {
     const messages: { role: string; content: string }[] = [];
     messages.push({ role: 'system', content: this.definition.systemPrompt });
 
+    // 附加已注册工具的用法说明（含动态注册的 MCP 工具）
+    const toolsSection = this.tools.buildSystemPromptSection();
+    if (toolsSection) {
+      messages.push({ role: 'system', content: toolsSection });
+    }
+
     if (context.openFiles?.length) {
       const parts = ['## Currently Open Files'];
       for (const f of context.openFiles) {
@@ -168,6 +174,12 @@ export class Agent {
 
     const messages: { role: string; content: string }[] = [];
     messages.push({ role: 'system', content: this.definition.systemPrompt });
+
+    // 附加已注册工具的用法说明（含动态注册的 MCP 工具）
+    const toolsSection = this.tools.buildSystemPromptSection();
+    if (toolsSection) {
+      messages.push({ role: 'system', content: toolsSection });
+    }
 
     if (context.openFiles?.length) {
       const parts = ['## Currently Open Files'];

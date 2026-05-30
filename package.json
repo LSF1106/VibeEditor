@@ -23,10 +23,13 @@
     "build:electron": "npm run build -w packages/electron",
     "build:all": "npm run build:agent && npm run build:core && npm run build:web && npm run build:server && npm run build:electron",
     "lint": "eslint packages/*/src --ext .ts,.tsx,.vue",
-    "typecheck": "tsc -b"
+    "typecheck": "tsc -b",
+    "cli": "npx tsx packages/agent/src/cli.ts",
+    "mcp:cli": "npx tsx packages/agent/src/cli.ts",
+    "mcp:test": "node --import tsx packages/agent/src/mcp/__test.ts"
   },
   "devDependencies": {
-    "@types/node": "^20.11.0",
+    "@types/node": "^20.19.41",
     "@typescript-eslint/eslint-plugin": "^6.19.0",
     "@typescript-eslint/parser": "^6.19.0",
     "concurrently": "^8.2.2",

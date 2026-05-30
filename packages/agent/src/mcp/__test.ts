@@ -1,17 +1,15 @@
 /**
- * MCP 传输层集成测试 —— 覆盖 stdio / HTTP / SSE 三种传输。
+ * MCP 集成测试 —— 覆盖 InMemory 和 stdio 两种传输。
  * 运行: node --import tsx packages/agent/src/mcp/__test.ts
  */
-import { spawn, type ChildProcess } from 'child_process';
-import { createServer as createHttp, type IncomingMessage, type ServerResponse } from 'http';
-import type { AddressInfo } from 'net';
+import { spawn } from 'child_process';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory';
+import { Server } from '@modelcontextprotocol/sdk/server/index';
+import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio';
 import { MCPClient } from './client';
-import { HTTPTransport } from './transports/http';
-import { SSETransport } from './transports/sse';
-import { StdioTransport } from './transports/stdio';
-import type { IMCPTransport } from './types';
 
-const TOOLS = [
+const TEST_TOOLS = [
   {
     name: 'echo',
     description: 'Echo back the input',
@@ -35,66 +33,140 @@ const TOOLS = [
   },
 ];
 
-function handleJSONRPC(body: any) {
-  const { id, method, params } = body;
-  if (method === 'initialize') {
-    return { jsonrpc: '2.0', id, result: { protocolVersion: '2024-11-05', capabilities: { tools: {} }, serverInfo: { name: 'HTTP Test', version: '1.0' } } };
-  }
-  if (method === 'tools/list') {
-    return { jsonrpc: '2.0', id, result: { tools: TOOLS } };
-  }
-  if (method === 'tools/call') {
-    const { name, arguments: args } = params;
+/** 创建内存 MCP 测试服务器，返回 client 端 transport 和清理函数 */
+function createInMemoryServer(): { clientTransport: InMemoryTransport; dispose: () => Promise<void> } {
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  const server = new Server(
+    { name: 'TestServer', version: '1.0.0' },
+    { capabilities: { tools: {} } }
+  );
+
+  // 拦截 tools/list
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({
+    tools: TEST_TOOLS,
+  }));
+
+  // 拦截 tools/call
+  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    const { name, arguments: args } = request.params;
     let text: string;
-    if (name === 'echo') text = `echo: ${args.message}`;
-    else if (name === 'add') text = `${args.a} + ${args.b} = ${Number(args.a) + Number(args.b)}`;
-    else text = `unknown: ${name}`;
-    return { jsonrpc: '2.0', id, result: { content: [{ type: 'text', text }] } };
-  }
-  return { jsonrpc: '2.0', id, error: { code: -32601, message: `Unknown method: ${method}` } };
-}
 
-// ==================== HTTP Mock Server ====================
+    if (name === 'echo') {
+      text = `echo: ${(args as any)?.message ?? ''}`;
+    } else if (name === 'add') {
+      const a = Number((args as any)?.a ?? 0);
+      const b = Number((args as any)?.b ?? 0);
+      text = `${a} + ${b} = ${a + b}`;
+    } else {
+      text = `unknown tool: ${name}`;
+    }
 
-async function startHttpServer(useSSE: boolean): Promise<{ url: string; close: () => Promise<void> }> {
-  return new Promise((resolve) => {
-    const server = createHttp((req: IncomingMessage, res: ServerResponse) => {
-      if (req.method !== 'POST') { res.writeHead(405).end(); return; }
-
-      let raw = '';
-      req.on('data', (chunk: Buffer) => raw += chunk.toString());
-      req.on('end', () => {
-        let body: any;
-        try { body = JSON.parse(raw); } catch { res.writeHead(400).end('Invalid JSON'); return; }
-
-        const result = handleJSONRPC(body);
-        res.setHeader('Content-Type', 'application/json');
-
-        if (useSSE) {
-          // SSE 模式：JSON 响应体包装在 SSE data 行中
-          res.setHeader('Content-Type', 'text/event-stream');
-          res.write(`data: ${JSON.stringify(result)}\n\n`);
-          res.end();
-        } else {
-          res.write(JSON.stringify(result));
-          res.end();
-        }
-      });
-    });
-
-    server.listen(0, '127.0.0.1', () => {
-      const addr = server.address() as AddressInfo;
-      resolve({ url: `http://127.0.0.1:${addr.port}`, close: () => new Promise(r => server.close(() => r())) });
-    });
+    return { content: [{ type: 'text' as const, text }] };
   });
+
+  // 启动服务端（不阻塞）
+  const serverPromise = server.connect(serverTransport);
+
+  return {
+    clientTransport,
+    dispose: async () => {
+      await server.close();
+      await serverPromise.catch(() => {});
+    },
+  };
 }
 
-// ==================== Stdio Transport Helper ====================
+/** 使用给定 transport 执行标准测试流程 */
+async function runTests(name: string, client: MCPClient, dispose: () => Promise<void>): Promise<void> {
+  const noopCtx = { fs: null as any };
 
-// Mock MCP server in Python — validates PYTHONUNBUFFERED auto-injection
-const PYTHON_SERVER = `
+  try {
+    console.log(`  initialize...`);
+    await client.initialize();
+
+    console.log(`  listTools...`);
+    const defs = await client.listTools();
+    const toolNames = defs.map(d => d.name).join(', ');
+    console.log(`  → ${toolNames}`);
+
+    const adapters = client.createToolAdapters();
+
+    console.log(`  execute echo(message=Hello)...`);
+    const r1 = await adapters[0].execute({ message: 'Hello' }, noopCtx);
+    console.log(`  → ${r1}`);
+
+    console.log(`  execute add(a=3,b=7)...`);
+    const r2 = await adapters[1].execute({ a: '3', b: '7' }, noopCtx);
+    console.log(`  → ${r2}`);
+
+    console.log(`  OK`);
+  } finally {
+    await dispose();
+  }
+}
+
+// ==================== Stdio Mock Server ====================
+
+const SERVER_JS = `
+var tools = ${JSON.stringify(TEST_TOOLS)};
+var buf = '';
+process.stdin.on('data', function(chunk) {
+  buf += chunk.toString();
+  var lines = buf.split('\\n');
+  buf = lines.pop() || '';
+  lines.forEach(function(line) {
+    var trimmed = line.trim();
+    if (!trimmed) return;
+    var msg;
+    try { msg = JSON.parse(trimmed); } catch(e) { return; }
+
+    function reply(result) {
+      process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: result }) + '\\n');
+    }
+
+    if (msg.method === 'initialize') {
+      reply({ protocolVersion: '2025-11-25', capabilities: { tools: {} }, serverInfo: { name: 'StdioTest', version: '1.0' } });
+    } else if (msg.method === 'notifications/initialized') {
+      // no response needed
+    } else if (msg.method === 'tools/list') {
+      reply({ tools: tools });
+    } else if (msg.method === 'tools/call') {
+      var name = msg.params.name, args = msg.params.arguments || {};
+      var text;
+      if (name === 'echo') text = 'echo: ' + args.message;
+      else if (name === 'add') text = args.a + ' + ' + args.b + ' = ' + (Number(args.a) + Number(args.b));
+      else text = 'unknown: ' + name;
+      reply({ content: [{ type: 'text', text: text }] });
+    }
+  });
+});
+`;
+
+(async () => {
+  console.log('=== MCP Integration Tests ===\n');
+
+  // 1. InMemory transport — fast in-process test
+  console.log('--- InMemoryTransport ---');
+  const { clientTransport, dispose: inMemDispose } = createInMemoryServer();
+  const inMemClient = new MCPClient(clientTransport, { name: 'TestClient', version: '1.0.0' });
+  await runTests('InMemoryTransport', inMemClient, inMemDispose);
+
+  // 2. Stdio transport — real child process
+  console.log('\n--- StdioClientTransport (Node.js) ---');
+  const stdioTransport = new StdioClientTransport({
+    command: 'node',
+    args: ['-e', SERVER_JS],
+  });
+  const stdioClient = new MCPClient(stdioTransport, { name: 'TestClient', version: '1.0.0' });
+  await runTests('StdioClientTransport', stdioClient, async () => {
+    await stdioTransport.close();
+  });
+
+  // 3. Stdio transport — Python (验证 PYTHONUNBUFFERED 由 SDK 处理)
+  const PYTHON_SERVER = `
 import sys, json
-tools = ${JSON.stringify(TOOLS)}
+tools = ${JSON.stringify(TEST_TOOLS)}
 buf = ''
 for line in sys.stdin:
     buf += line
@@ -113,7 +185,9 @@ for line in sys.stdin:
             sys.stdout.flush()
         method = msg.get('method')
         if method == 'initialize':
-            reply({'protocolVersion': '2024-11-05', 'capabilities': {'tools': {}}, 'serverInfo': {'name': 'Python Test', 'version': '1.0'}})
+            reply({'protocolVersion': '2025-11-25', 'capabilities': {'tools': {}}, 'serverInfo': {'name': 'PythonTest', 'version': '1.0'}})
+        elif method == 'notifications/initialized':
+            pass
         elif method == 'tools/list':
             reply({'tools': tools})
         elif method == 'tools/call':
@@ -127,149 +201,30 @@ for line in sys.stdin:
                 reply({'content': [{'type': 'text', 'text': f"unknown: {nm}"}]})
 `;
 
-const SERVER_JS = `
-var tools = ${JSON.stringify(TOOLS)};
-var buf = '';
-process.stdin.on('data', function(chunk) {
-  buf += chunk.toString();
-  var lines = buf.split('\\n');
-  buf = lines.pop() || '';
-  lines.forEach(function(line) {
-    var trimmed = line.trim();
-    if (!trimmed) return;
-    var msg;
-    try { msg = JSON.parse(trimmed); } catch(e) { return; }
-    function reply(result) {
-      process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: result }) + '\\n');
-    }
-    if (msg.method === 'initialize') {
-      reply({ protocolVersion: '2024-11-05', capabilities: { tools: {} }, serverInfo: { name: 'Test', version: '1.0' } });
-    } else if (msg.method === 'tools/list') {
-      reply({ tools: tools });
-    } else if (msg.method === 'tools/call') {
-      var name = msg.params.name, args = msg.params.arguments;
-      var text;
-      if (name === 'echo') text = 'echo: ' + args.message;
-      else if (name === 'add') text = args.a + ' + ' + args.b + ' = ' + (Number(args.a) + Number(args.b));
-      else text = 'unknown: ' + name;
-      reply({ content: [{ type: 'text', text: text }] });
-    }
+  console.log('\n--- StdioClientTransport (Python) ---');
+  const pyTransport = new StdioClientTransport({
+    command: 'python',
+    args: ['-c', PYTHON_SERVER],
   });
-});
-`;
-
-function createStdioTransport(): { transport: IMCPTransport; dispose: () => void } {
-  const proc = spawn('node', ['-e', SERVER_JS], { stdio: ['pipe', 'pipe', 'ignore'] });
-  let id = 0;
-  const pending = new Map<number, { resolve: Function; reject: Function }>();
-  let buf = '';
-
-  proc.stdout!.on('data', (chunk: Buffer) => {
-    buf += chunk.toString();
-    const lines = buf.split('\n');
-    buf = lines.pop() || '';
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-      let msg: any;
-      try { msg = JSON.parse(trimmed); } catch { continue; }
-      if (msg.id != null && pending.has(msg.id)) {
-        const { resolve, reject } = pending.get(msg.id)!;
-        pending.delete(msg.id);
-        msg.error ? reject(new Error(`MCP ${msg.error.code}: ${msg.error.message}`)) : resolve(msg.result);
-      }
-    }
-  });
-
-  return {
-    transport: {
-      sendRequest(method, params?) {
-        return new Promise((resolve, reject) => {
-          const rid = ++id;
-          pending.set(rid, { resolve, reject });
-          proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id: rid, method, params: params || {} }) + '\n');
-          setTimeout(() => { if (pending.has(rid)) { pending.delete(rid); reject(new Error('Timeout')); } }, 10000);
-        });
-      },
-      sendNotification(method, params?) {
-        proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', method, params: params || {} }) + '\n');
-      },
-      dispose() { proc.kill(); pending.clear(); },
-    },
-    dispose() { proc.kill(); pending.clear(); },
-  };
-}
-
-// ==================== Test Runner ====================
-
-async function testTransport(name: string, transport: IMCPTransport, extra?: { dispose: () => void }) {
-  console.log(`\n--- ${name} ---`);
-  const client = new MCPClient(transport);
+  const pyClient = new MCPClient(pyTransport, { name: 'TestClient', version: '1.0.0' });
 
   try {
-    console.log('  initialize...');
-    await client.initialize('TestClient', '1.0.0');
-
-    console.log('  listTools...');
-    const defs = await client.listTools();
-    console.log(`  → ${defs.map(d => d.name).join(', ')}`);
-
-    const adapters = client.createToolAdapters();
-    const noopCtx = { fs: null as any };
-
-    console.log('  execute echo(message=Hello)...');
-    const r1 = await adapters[0].execute({ message: 'Hello' }, noopCtx);
-    console.log(`  → ${r1}`);
-
-    console.log('  execute add(a=3,b=7)...');
-    const r2 = await adapters[1].execute({ a: '3', b: '7' }, noopCtx);
-    console.log(`  → ${r2}`);
-
-    console.log('  OK');
-  } finally {
-    transport.dispose();
-    extra?.dispose();
-  }
-}
-
-(async () => {
-  console.log('=== MCP Transport Tests ===');
-
-  // 1. Stdio
-  const stdio = createStdioTransport();
-  await testTransport('StdioTransport', stdio.transport, { dispose: stdio.dispose });
-
-  // 2. HTTP
-  const httpServer = await startHttpServer(false);
-  await testTransport('HTTPTransport', new HTTPTransport(httpServer.url));
-  await httpServer.close();
-
-  // 3. SSE
-  const sseServer = await startHttpServer(true);
-  await testTransport('SSETransport', new SSETransport(sseServer.url));
-  await sseServer.close();
-
-  // 4. Python via StdioTransport (验证 PYTHONUNBUFFERED 自动注入)
-  console.log('\n--- StdioTransport (Python) ---');
-  const pythonTransport = new StdioTransport('python', ['-c', PYTHON_SERVER]);
-  await pythonTransport.connect();
-
-  const pyClient = new MCPClient(pythonTransport);
-  try {
-    console.log('  initialize...');
+    console.log(`  initialize...`);
     await pyClient.initialize();
-    console.log('  listTools...');
+
+    console.log(`  listTools...`);
     const defs = await pyClient.listTools();
     console.log(`  → ${defs.map(d => d.name).join(', ')}`);
 
     const adapters = pyClient.createToolAdapters();
     const noopCtx = { fs: null as any };
-    console.log('  execute echo(message=World)...');
+
+    console.log(`  execute echo(message=World)...`);
     const r = await adapters[0].execute({ message: 'World' }, noopCtx);
     console.log(`  → ${r}`);
-    console.log('  OK');
+    console.log(`  OK`);
   } finally {
-    pythonTransport.dispose();
+    await pyTransport.close();
   }
 
   console.log('\n=== All transport tests passed ===');

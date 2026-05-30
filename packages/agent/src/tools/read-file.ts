@@ -1,4 +1,4 @@
-import type { ITool, ToolInputSchema, ToolExecutionContext } from '../types/tool';
+import type { ITool, ToolInputSchema, ToolExecutionContext, ToolAnnotations } from '../types/tool';
 
 const inputSchema: ToolInputSchema = {
   type: 'object',
@@ -8,11 +8,17 @@ const inputSchema: ToolInputSchema = {
   required: ['path'],
 };
 
+const annotations: ToolAnnotations = {
+  readOnlyHint: true,
+  idempotentHint: true,
+};
+
 export class ReadFileTool implements ITool {
   readonly name = 'read_file';
   readonly description = 'Read a file not currently in context';
   readonly usage = '<read_file path="path/to/file"/>';
   readonly inputSchema = inputSchema;
+  readonly annotations = annotations;
 
   async execute(params: Record<string, string>, context: ToolExecutionContext): Promise<string> {
     try {

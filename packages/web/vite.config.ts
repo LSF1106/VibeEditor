@@ -23,6 +23,9 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    rollupOptions: {
+      external: (id: string) => id.includes('@modelcontextprotocol/sdk'),
+    },
   },
   optimizeDeps: {
     include: ['monaco-editor'], // 预构建 monaco-editor 以加速冷启动

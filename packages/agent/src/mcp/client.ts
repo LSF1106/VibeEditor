@@ -1,74 +1,141 @@
+import type { Client as SdkClient } from '@modelcontextprotocol/sdk/client';
+import type { Transport } from '@modelcontextprotocol/sdk/shared/transport';
+import type { CallToolRequest, CallToolResult, ListToolsResult, ServerCapabilities } from '@modelcontextprotocol/sdk/types';
 import type { ITool } from '../types/tool';
-import type { IMCPTransport, MCPToolDefinition, MCPCallResult } from './types';
-import { buildXMLUsage } from './types';
+import { buildXMLUsage } from './utils';
 import { MCPToolAdapter } from './adapter';
 
-/** MCP 客户端 —— 管理连接生命周期、发现工具、创建适配器 */
+type MCPToolDefinition = ListToolsResult['tools'][number];
+
+/** MCP 客户端标识信息（在 initialize 握手时发送给服务端） */
+export interface MCPClientInfo {
+  name: string;
+  version: string;
+}
+
+/**
+ * MCP 客户端 —— 封装官方 @modelcontextprotocol/sdk 的 Client。
+ *
+ * 职责：
+ * - 管理单个 MCP 服务器的连接生命周期（initialize → listTools → callTool → dispose）
+ * - 将 MCP 工具定义包装为 ITool 适配器，可直接注册到 Agent
+ * - 动态 import SDK Client，避免浏览器端加载 Node 模块
+ */
 export class MCPClient {
-  private transport: IMCPTransport;
+  private sdkClient: SdkClient | null = null;
+  private transport: Transport;
+  private clientInfo: MCPClientInfo;
   private initialized = false;
   private tools: MCPToolDefinition[] = [];
+  private serverName = '';
+  private serverVersion = '';
 
-  constructor(transport: IMCPTransport) {
+  constructor(
+    transport: Transport,
+    clientInfo: MCPClientInfo = { name: 'VibeEditor', version: '0.1.0' }
+  ) {
     this.transport = transport;
+    this.clientInfo = clientInfo;
   }
 
-  /** 握手并初始化，完成后可供调用 */
-  async initialize(clientName = 'VibeEditor', clientVersion = '0.1.0'): Promise<void> {
-    const result = await this.transport.sendRequest('initialize', {
-      protocolVersion: '2024-11-05',
-      capabilities: { tools: {} },
-      clientInfo: { name: clientName, version: clientVersion },
-    }) as Record<string, unknown>;
+  // ====================== 连接生命周期 ======================
 
-    if (!result) throw new Error('MCP initialize failed: no response');
+  /** 执行 MCP 握手 —— 动态加载 SDK Client 并 connect() */
+  async initialize(): Promise<void> {
+    const { Client } = await import('@modelcontextprotocol/sdk/client');
+    this.sdkClient = new Client(
+      { name: this.clientInfo.name, version: this.clientInfo.version },
+      { capabilities: {} }
+    );
+    await this.sdkClient.connect(this.transport);
 
-    this.transport.sendNotification('initialized', {});
+    const serverVersion = this.sdkClient.getServerVersion();
+    this.serverName = serverVersion?.name ?? '';
+    this.serverVersion = serverVersion?.version ?? '';
     this.initialized = true;
   }
 
-  /** 获取服务端工具列表 */
+  async dispose(): Promise<void> {
+    this.initialized = false;
+    this.tools = [];
+    this.serverName = '';
+    this.serverVersion = '';
+    if (this.sdkClient) {
+      await this.sdkClient.close();
+      this.sdkClient = null;
+    }
+  }
+
+  // ====================== 工具操作 ======================
+
+  /** 获取服务端工具列表并缓存，保留 SDK 完整元数据 */
   async listTools(): Promise<MCPToolDefinition[]> {
     this.ensureInitialized();
-    const result = await this.transport.sendRequest('tools/list') as { tools?: MCPToolDefinition[] };
-
-    this.tools = result.tools || [];
+    const result = await this.sdkClient!.listTools();
+    this.tools = result.tools as MCPToolDefinition[];
     return this.tools;
   }
 
-  /** 调用指定工具 */
-  async callTool(name: string, args: Record<string, unknown>): Promise<MCPCallResult> {
+  /** 调用指定工具，使用 SDK 的 CallToolRequest 参数格式 */
+  async callTool(name: string, args: Record<string, unknown>): Promise<CallToolResult> {
     this.ensureInitialized();
-    const result = await this.transport.sendRequest('tools/call', { name, arguments: args }) as MCPCallResult;
-
-    return result;
+    const params: CallToolRequest['params'] = { name, arguments: args };
+    return this.sdkClient!.callTool(params) as Promise<CallToolResult>;
   }
 
-  /** 将已发现的所有工具包装为 ITool 适配器数组 */
+  /** 将已缓存的工具定义包装为 ITool 适配器数组 */
   createToolAdapters(): ITool[] {
     return this.tools.map(def =>
       new MCPToolAdapter(def, buildXMLUsage(def.name, def.inputSchema), (name, args) => this.callTool(name, args))
     );
   }
 
-  /** 一次调用：发现工具并返回 ITool[]，可直接注册到 Agent */
+  /** 便捷方法：发现工具并返回 ITool[]，可直接注册到 Agent */
   async discoverAndCreateAdapters(): Promise<ITool[]> {
     await this.listTools();
     return this.createToolAdapters();
   }
 
-  /** 获取原始工具定义列表 */
+  // ====================== 服务端能力查询 ======================
+
+  /** 获取服务端能力声明（initialize 后可用） */
+  getServerCapabilities(): ServerCapabilities | undefined {
+    if (!this.sdkClient) return undefined;
+    return this.sdkClient.getServerCapabilities();
+  }
+
+  /** 检查服务端是否支持 tools 能力 */
+  hasToolCapability(): boolean {
+    const caps = this.getServerCapabilities();
+    return !!caps?.tools;
+  }
+
+  // ====================== 查询方法 ======================
+
+  /** 获取缓存的工具定义列表 */
   getToolDefinitions(): MCPToolDefinition[] {
     return this.tools;
   }
 
-  dispose(): void {
-    this.initialized = false;
-    this.tools = [];
-    this.transport.dispose();
+  /** 获取服务端信息（initialize 后可用） */
+  getServerInfo(): { name: string; version: string } {
+    return { name: this.serverName, version: this.serverVersion };
   }
 
+  get isInitialized(): boolean {
+    return this.initialized;
+  }
+
+  /** 获取底层 SDK Client（高级用例，initialize 后才可用） */
+  getSdkClient(): SdkClient | null {
+    return this.sdkClient;
+  }
+
+  // ====================== 内部方法 ======================
+
   private ensureInitialized(): void {
-    if (!this.initialized) throw new Error('MCP client not initialized');
+    if (!this.initialized || !this.sdkClient) {
+      throw new Error('MCP client not initialized');
+    }
   }
 }
