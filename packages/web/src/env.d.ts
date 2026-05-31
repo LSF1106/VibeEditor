@@ -29,9 +29,17 @@ interface Window {
     openFolder: () => Promise<string | null>;
     openFile: () => Promise<{ path: string } | null>;
     saveFile: (path: string, content: string) => Promise<string | null>;
+    getAppInfo: () => Promise<{ name: string; version: string; author: string }>;
     onMenuAction: (callback: (action: string) => void) => void;
   };
 }
+
+// 构建时从 app-info.json 注入的全局常量
+declare const __APP_INFO__: {
+  name: string;
+  version: string;
+  author: string;
+};
 
 // 浏览器 File System Access API 类型声明（部分浏览器可能不支持）
 declare function showDirectoryPicker(options?: { mode?: 'read' | 'readwrite' }): Promise<FileSystemDirectoryHandle>;

@@ -1,4 +1,10 @@
 export default {
+  about: {
+    title: 'About',
+    name: 'Application',
+    version: 'Version',
+    author: 'Author',
+  },
   toolbar: {
     showSidebar: 'Show Sidebar',
     hideSidebar: 'Hide Sidebar',

@@ -1,9 +1,10 @@
 import { app, BrowserWindow, ipcMain, dialog, Menu, protocol } from 'electron';
+import { readFileSync } from 'fs';
 import { readFile } from 'fs/promises';
-
-Menu.setApplicationMenu(null);
 import * as path from 'path';
 import { registerFileHandlers } from './ipc/file-handler';
+
+const appInfo = JSON.parse(readFileSync(path.join(__dirname, '../../../app-info.json'), 'utf-8'));
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -72,6 +73,110 @@ function registerVibeProtocol() {
   });
 }
 
+function sendMenuAction(action: string) {
+  if (mainWindow) {
+    mainWindow.webContents.send('menu:action', action);
+  }
+}
+
+function buildMenu(): Electron.MenuItemConstructorOptions[] {
+  return [
+    {
+      label: 'File',
+      submenu: [
+        {
+          label: 'New File',
+          accelerator: 'CmdOrCtrl+N',
+          click: () => sendMenuAction('new-file'),
+        },
+        {
+          label: 'New Folder',
+          click: () => sendMenuAction('new-folder'),
+        },
+        { type: 'separator' },
+        {
+          label: 'Open Folder',
+          click: () => sendMenuAction('open-folder'),
+        },
+        {
+          label: 'Browse Server',
+          click: () => sendMenuAction('connect-server'),
+        },
+        {
+          label: 'Open File',
+          click: () => sendMenuAction('open-local-file'),
+        },
+        { type: 'separator' },
+        {
+          label: 'Save',
+          accelerator: 'CmdOrCtrl+S',
+          click: () => sendMenuAction('save'),
+        },
+        { type: 'separator' },
+        { role: 'quit' },
+      ],
+    },
+    {
+      label: 'Edit',
+      submenu: [
+        {
+          label: 'Cut',
+          accelerator: 'CmdOrCtrl+X',
+          click: () => sendMenuAction('edit-cut'),
+        },
+        {
+          label: 'Copy',
+          accelerator: 'CmdOrCtrl+C',
+          click: () => sendMenuAction('edit-copy'),
+        },
+        {
+          label: 'Paste',
+          accelerator: 'CmdOrCtrl+V',
+          click: () => sendMenuAction('edit-paste'),
+        },
+        { type: 'separator' },
+        {
+          label: 'Undo',
+          accelerator: 'CmdOrCtrl+Z',
+          click: () => sendMenuAction('edit-undo'),
+        },
+        {
+          label: 'Redo',
+          accelerator: 'CmdOrCtrl+Y',
+          click: () => sendMenuAction('edit-redo'),
+        },
+        { type: 'separator' },
+        {
+          label: 'Find',
+          accelerator: 'CmdOrCtrl+F',
+          click: () => sendMenuAction('edit-find'),
+        },
+        {
+          label: 'Replace',
+          accelerator: 'CmdOrCtrl+H',
+          click: () => sendMenuAction('edit-replace'),
+        },
+      ],
+    },
+    {
+      label: 'Help',
+      submenu: [
+        {
+          label: 'About',
+          click: () => {
+            dialog.showMessageBox(mainWindow!, {
+              type: 'info',
+              title: `About ${appInfo.name}`,
+              message: appInfo.name,
+              detail: `Version: ${appInfo.version}\nAuthor: ${appInfo.author}`,
+            });
+          },
+        },
+      ],
+    },
+  ];
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -106,6 +211,12 @@ function createWindow() {
 app.whenReady().then(() => {
   registerVibeProtocol();
   registerFileHandlers(ipcMain, dialog);
+
+  ipcMain.handle('app:getInfo', () => appInfo);
+
+  const menu = Menu.buildFromTemplate(buildMenu());
+  Menu.setApplicationMenu(menu);
+
   createWindow();
 
   app.on('activate', () => {

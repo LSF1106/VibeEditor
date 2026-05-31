@@ -1,4 +1,10 @@
 export default {
+  about: {
+    title: '关于',
+    name: '应用名称',
+    version: '版本',
+    author: '作者',
+  },
   toolbar: {
     showSidebar: '显示侧边栏',
     hideSidebar: '隐藏侧边栏',

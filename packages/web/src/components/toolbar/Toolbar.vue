@@ -72,6 +72,26 @@
           </button>
         </div>
       </div>
+      <div class="dropdown">
+        <button class="toolbar-btn dropdown-trigger">
+          {{ $t('about.title') }}
+          <span class="dropdown-arrow">▾</span>
+        </button>
+        <div class="dropdown-menu">
+          <div class="dropdown-item dropdown-item-info">
+            <span>{{ $t('about.name') }}</span>
+            <span class="dropdown-shortcut">{{ appInfo.name }}</span>
+          </div>
+          <div class="dropdown-item dropdown-item-info">
+            <span>{{ $t('about.version') }}</span>
+            <span class="dropdown-shortcut">v{{ appInfo.version }}</span>
+          </div>
+          <div class="dropdown-item dropdown-item-info">
+            <span>{{ $t('about.author') }}</span>
+            <span class="dropdown-shortcut">{{ appInfo.author }}</span>
+          </div>
+        </div>
+      </div>
     </div>
     <div class="toolbar-center">
       <span class="toolbar-title">{{ $t('toolbar.appName') }}</span>
@@ -89,6 +109,8 @@
 
 <script setup lang="ts">
 import type { WorkspaceMode } from '../../stores/editor';
+
+const appInfo = __APP_INFO__;
 
 defineProps<{
   env: string;

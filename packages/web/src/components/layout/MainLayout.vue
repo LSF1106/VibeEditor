@@ -193,7 +193,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch, computed } from 'vue';
+import { ref, reactive, watch, computed, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useEditorStore } from '../../stores/editor';
 import { useFileSystem } from '../../composables/useFileSystem';
@@ -551,6 +551,42 @@ async function handleExpandDir(dirPath: string) {
   } catch { /* 忽略读取失败 */ }
   loadingDirs.value = new Set([...loadingDirs.value].filter(d => d !== dirPath));
 }
+
+onMounted(() => {
+  if (window.electronAPI) {
+    window.electronAPI.onMenuAction((action: string) => {
+      switch (action) {
+        case 'new-file':
+          store.newUntitled();
+          break;
+        case 'new-folder':
+          fs.createFolder();
+          break;
+        case 'open-folder':
+          handleOpenFolder();
+          break;
+        case 'connect-server':
+          handleConnectServer();
+          break;
+        case 'open-local-file':
+          fs.openLocalFile();
+          break;
+        case 'save':
+          fs.saveCurrentFile();
+          break;
+        case 'edit-cut':
+        case 'edit-copy':
+        case 'edit-paste':
+        case 'edit-undo':
+        case 'edit-redo':
+        case 'edit-find':
+        case 'edit-replace':
+          handleEditAction(action.replace('edit-', ''));
+          break;
+      }
+    });
+  }
+});
 
 /** 侧边栏（文件树）宽度拖拽 */
 function startSidebarResize(e: MouseEvent) {

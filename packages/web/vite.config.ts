@@ -1,6 +1,9 @@
 import { defineConfig } from 'vite';
 import vue from '@vitejs/plugin-vue';
 import { resolve } from 'path';
+import { readFileSync } from 'fs';
+
+const appInfo = JSON.parse(readFileSync(resolve(__dirname, '../../app-info.json'), 'utf-8'));
 
 export default defineConfig({
   plugins: [vue()],
@@ -8,6 +11,9 @@ export default defineConfig({
     alias: {
       '@': resolve(__dirname, 'src'), // @/ → src/ 路径别名
     },
+  },
+  define: {
+    __APP_INFO__: JSON.stringify(appInfo),
   },
   server: {
     port: 5173,
