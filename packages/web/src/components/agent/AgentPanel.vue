@@ -1,7 +1,36 @@
 <template>
   <div class="agent-panel">
+    <!-- 会话标签栏 -->
+    <div class="session-tabs-bar">
+      <button class="session-new-btn" @click="createNewSession" :title="$t('agent.newSession')">+</button>
+      <div class="session-tabs-scroll" ref="tabsScrollRef" @wheel="onTabsWheel" @scroll="updateScrollState">
+        <div
+          v-for="s in sessionStore.sessions"
+          :key="s.id"
+          class="session-tab"
+          :class="{ active: s.id === sessionStore.activeSessionId }"
+          @click="sessionStore.setActiveSession(s.id)"
+        >
+          <span class="session-tab-name" :title="s.name">{{ s.name }}</span>
+          <span class="session-tab-close" @click.stop="handleCloseSession(s.id)">×</span>
+        </div>
+      </div>
+      <template v-if="hasOverflow">
+        <button
+          class="session-scroll-btn"
+          :class="{ disabled: !canScrollLeft }"
+          @click="scrollTabs(-1)"
+        >◀</button>
+        <button
+          class="session-scroll-btn"
+          :class="{ disabled: !canScrollRight }"
+          @click="scrollTabs(1)"
+        >▶</button>
+      </template>
+    </div>
+
     <!-- 思考进度条 —— 处理时在面板最上方滚动 -->
-    <div v-if="agent.isProcessing.value" class="thinking-progress">
+    <div v-if="activeAgent?.isProcessing.value" class="thinking-progress">
       <div class="thinking-progress-bar"></div>
     </div>
 
@@ -16,15 +45,22 @@
       <button class="guide-cta" @click="showSettings = true">{{ $t('agent.addProvider') }}</button>
     </div>
 
-    <!-- 有提供商时显示正常的聊天界面 -->
-    <template v-if="providerSettings.providers.value.length > 0">
+    <!-- 无活跃会话时的提示 -->
+    <div v-else-if="!activeAgent" class="agent-guide">
+      <div class="guide-icon">+</div>
+      <div class="guide-title">{{ $t('agent.noSessionPrompt') }}</div>
+      <button class="guide-cta" @click="createNewSession">{{ $t('agent.newSession') }}</button>
+    </div>
+
+    <!-- 有提供商且有活跃会话时显示正常的聊天界面 -->
+    <template v-else>
       <!-- 消息列表 —— 时间轴布局 -->
       <div class="agent-messages" ref="messagesContainer">
-        <div v-if="agent.messages.value.length === 0" class="agent-empty">
+        <div v-if="activeAgent.messages.value.length === 0" class="agent-empty">
           {{ $t('agent.emptyChat') }}
         </div>
 
-        <template v-for="msg in agent.messages.value" :key="msg.id">
+        <template v-for="msg in activeAgent.messages.value" :key="msg.id">
           <!-- 用户消息 —— 右对齐，不在时间轴上 -->
           <div v-if="msg.role === 'user'" class="user-msg-row">
             <div class="user-msg-bubble">
@@ -149,7 +185,7 @@
           @keydown.ctrl.enter.prevent="send"
           @keydown.meta.enter.prevent="send"
         ></textarea>
-        <button class="agent-send-btn" @click="send" :disabled="!input.trim() || agent.isProcessing.value">
+        <button class="agent-send-btn" @click="send" :disabled="!input.trim() || (activeAgent?.isProcessing.value ?? false)">
           {{ $t('agent.send') }}
         </button>
       </div>
@@ -164,7 +200,7 @@
           />
           <button class="settings-btn" :title="$t('agent.providerSettings')" @click="showSettings = true">&#9881;</button>
         </div>
-        <ModeSelector v-model="agent.config.value.mode" />
+        <ModeSelector v-model="currentMode" />
       </div>
     </template>
 
@@ -174,8 +210,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, nextTick, onMounted, onUnmounted } from 'vue';
-import { useAgent } from '../../composables/useAgent';
+import { ref, reactive, computed, nextTick, onMounted, onUnmounted } from 'vue';
+import { useSessionStore } from '../../stores/sessions';
 import { useProviderSettings } from '../../composables/useProviderSettings';
 import { useEditorStore } from '../../stores/editor';
 import { renderMarkdown } from '../../services/markdown';
@@ -192,7 +228,7 @@ const emit = defineEmits<{
   'undo-edits': []
 }>();
 
-const agent = useAgent();
+const sessionStore = useSessionStore();
 const providerSettings = useProviderSettings();
 const editorStore = useEditorStore();
 const input = ref('');
@@ -201,14 +237,64 @@ const showSettings = ref(false);
 const inputHeight = ref(90);
 let isResizingInput = false;
 
-// 块展开/折叠状态（thinking 默认折叠但显示预览，tool_call 默认折叠）
+// 从 store 获取当前活跃的 agent 实例
+const activeAgent = computed(() => sessionStore.activeAgent);
+
+// ModeSelector 的 writable computed —— 解决 activeAgent 可能为 null 的问题
+const currentMode = computed({
+  get: () => activeAgent.value?.config.value.mode ?? 'plan',
+  set: (val) => {
+    if (activeAgent.value) {
+      activeAgent.value.config.value.mode = val;
+    }
+  },
+});
+
+// --- 会话标签栏滚动控制 ---
+const tabsScrollRef = ref<HTMLElement>();
+const hasOverflow = ref(false);
+const canScrollLeft = ref(false);
+const canScrollRight = ref(false);
+
+function updateScrollState() {
+  const el = tabsScrollRef.value;
+  if (!el) return;
+  hasOverflow.value = el.scrollWidth > el.clientWidth;
+  canScrollLeft.value = el.scrollLeft > 0;
+  canScrollRight.value = el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
+}
+
+function scrollTabs(direction: 1 | -1) {
+  const el = tabsScrollRef.value;
+  if (!el) return;
+  el.scrollBy({ left: direction * 200, behavior: 'smooth' });
+}
+
+function onTabsWheel(e: WheelEvent) {
+  const el = tabsScrollRef.value;
+  if (!el) return;
+  e.preventDefault();
+  el.scrollBy({ left: e.deltaY, behavior: 'auto' });
+}
+
+function createNewSession() {
+  sessionStore.createSession();
+  nextTick(() => updateScrollState());
+}
+
+function handleCloseSession(id: string) {
+  sessionStore.closeSession(id);
+  nextTick(() => updateScrollState());
+}
+
+// --- 块展开/折叠状态 ---
 const expandedState = reactive<Record<string, boolean>>({});
 
 function toggleBlock(blockId: string) {
   expandedState[blockId] = !expandedState[blockId];
 }
 
-/** 清理消息内容，移除工具结果标记（工具结果已在独立节点中展示） */
+/** 清理消息内容，移除工具结果标记 */
 function cleanContent(msg: ChatMessage): string {
   let text = msg.content;
   text = text.replace(/\n?\*\*\[Tool:[^\]]+\]\*\*\n[\s\S]*?(?=\n?\*\*\[Tool:|$)/g, '');
@@ -250,6 +336,8 @@ function onMessagesScroll() {
   userScrolledUp.value = !isNearBottom();
 }
 
+let ro: ResizeObserver | null = null;
+
 function setupObserver() {
   const el = messagesContainer.value;
   if (!el) return;
@@ -264,11 +352,19 @@ function setupObserver() {
 }
 
 async function send() {
+  const agent = activeAgent.value;
+  if (!agent) return;
+
   const text = input.value.trim();
   if (!text) return;
   input.value = '';
 
   userScrolledUp.value = false;
+
+  // 自动从首条消息命名会话
+  if (sessionStore.activeSession && !sessionStore.activeSession.nameAutoGenerated) {
+    sessionStore.autoNameFromFirstMessage(sessionStore.activeSession.id, text);
+  }
 
   const activeFilePath = editorStore.activeTab?.path;
 
@@ -283,6 +379,8 @@ async function send() {
   scrollToBottom();
 
   await streamPromise;
+
+  sessionStore.saveCurrentSession();
 
   if (agent.lastEdits.value.length > 0) {
     emit('apply-edits', [...agent.lastEdits.value]);
@@ -315,11 +413,20 @@ function startInputResize(e: MouseEvent) {
 onMounted(() => {
   messagesContainer.value?.addEventListener('scroll', onMessagesScroll);
   setupObserver();
+
+  // 标签栏溢出检测
+  const scrollEl = tabsScrollRef.value;
+  if (scrollEl) {
+    ro = new ResizeObserver(() => updateScrollState());
+    ro.observe(scrollEl);
+    updateScrollState();
+  }
 });
 
 onUnmounted(() => {
   cancelAnimationFrame(scrollRafId);
   observer?.disconnect();
+  ro?.disconnect();
   messagesContainer.value?.removeEventListener('scroll', onMessagesScroll);
 });
 </script>
@@ -334,10 +441,111 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
+/* ===== 会话标签栏 ===== */
+.session-tabs-bar {
+  display: flex;
+  align-items: center;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+  height: 32px;
+}
+
+.session-new-btn {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 16px;
+  width: 28px;
+  height: 100%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-right: 1px solid var(--border-color);
+}
+.session-new-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.session-tabs-scroll {
+  display: flex;
+  overflow-x: auto;
+  flex: 1;
+  min-width: 0;
+}
+.session-tabs-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.session-tab {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-right: 1px solid var(--border-color);
+  white-space: nowrap;
+  user-select: none;
+  max-width: 150px;
+}
+.session-tab.active {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+.session-tab:hover {
+  background: var(--bg-hover);
+}
+
+.session-tab-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.session-tab-close {
+  font-size: 12px;
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+.session-tab-close:hover {
+  opacity: 1;
+  color: #f44747;
+}
+
+.session-scroll-btn {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  border-left: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  font-size: 10px;
+  width: 22px;
+  height: 100%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.session-scroll-btn:hover:not(.disabled) {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+.session-scroll-btn.disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
 /* ===== 思考进度条 ===== */
 .thinking-progress {
   position: absolute;
-  top: 0;
+  top: 32px;
   left: 0;
   right: 0;
   height: 3px;

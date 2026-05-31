@@ -29,10 +29,12 @@ export interface StreamEvent {
 export function createAgentService(baseUrl = '') {
   return {
     async sendMessage(message: string, context: Record<string, unknown>, config: AgentConfig): Promise<AgentMessage> {
+      const body: Record<string, unknown> = { message, context, config };
+      if (context.sessionId) body.sessionId = context.sessionId;
       const res = await fetch(`${baseUrl}/api/agent/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message, context, config }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error(`${i18n.global.t('errors.apiError')}: ${res.status}`);
       return res.json();
@@ -51,6 +53,9 @@ export function createAgentService(baseUrl = '') {
       }
       if (context.mcpConfig) {
         body.mcpConfig = context.mcpConfig;
+      }
+      if (context.sessionId) {
+        body.sessionId = context.sessionId;
       }
       const res = await fetch(`${baseUrl}/api/agent/stream`, {
         method: 'POST',

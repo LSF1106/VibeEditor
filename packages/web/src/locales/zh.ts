@@ -110,6 +110,9 @@ export default {
     askAgent: '向 AI 助手提问...',
     send: '发送',
     providerSettings: '提供商设置',
+    newSession: '新建会话',
+    defaultSessionName: '新会话',
+    noSessionPrompt: '点击 + 新建会话以开始对话',
   },
   settingsDialog: {
     title: 'LLM 提供商设置',

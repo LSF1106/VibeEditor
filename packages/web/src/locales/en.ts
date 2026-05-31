@@ -110,6 +110,9 @@ export default {
     askAgent: 'Ask the agent...',
     send: 'Send',
     providerSettings: 'Provider Settings',
+    newSession: 'New Session',
+    defaultSessionName: 'New Session',
+    noSessionPrompt: 'Click + to start a new session',
   },
   settingsDialog: {
     title: 'LLM Provider Settings',

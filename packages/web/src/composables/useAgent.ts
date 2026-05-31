@@ -96,7 +96,7 @@ function buildAgentContext(activeFilePath?: string): AgentContext {
   return { openFiles, fileTree, cursorPosition, selection, conversationHistory: [] };
 }
 
-export function useAgent() {
+export function useAgent(sessionId?: string) {
   const messages = ref<ChatMessage[]>([]);
   const isProcessing = ref(false);
   const config = ref<AgentConfig>({ mode: 'build' });
@@ -141,6 +141,7 @@ export function useAgent() {
       const response = await service.sendMessage(content, {
         ...ctx,
         conversationHistory: messages.value.slice(0, -1),
+        sessionId,
       }, buildRequestConfig(provider));
 
       const msg: ChatMessage = { ...response };
@@ -239,6 +240,7 @@ export function useAgent() {
         conversationHistory: history,
         workspaceRoot: store.workspaceRoot || undefined,
         mcpConfig,
+        sessionId,
       };
       await service.streamMessage(
         content,
@@ -326,9 +328,13 @@ export function useAgent() {
     thinkingActive.value = false;
   }
 
+  function restoreMessages(msgs: ChatMessage[]) {
+    messages.value = msgs;
+  }
+
   function setMode(mode: AgentConfig['mode']) {
     config.value.mode = mode;
   }
 
-  return { messages, isProcessing, config, lastEdits, toolStatus, thinkingActive, sendMessage, streamMessage, clearMessages, setMode };
+  return { messages, isProcessing, config, lastEdits, toolStatus, thinkingActive, sendMessage, streamMessage, clearMessages, restoreMessages, setMode };
 }

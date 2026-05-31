@@ -116,7 +116,8 @@ router.post('/stream', async (req: Request, res: Response) => {
         }
       }
 
-      const session = new Session('default', fs, agent);
+      const sessionId = (req.body.sessionId as string) || 'default';
+      const session = new Session(sessionId, fs, agent);
       await session.startStream(message, context as AgentContext, (e) => {
         switch (e.type) {
           case 'chunk':
