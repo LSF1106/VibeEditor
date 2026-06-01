@@ -1,26 +1,33 @@
 import { ref, watch } from 'vue';
 import type { McpServerConfig, McpToolInfo } from '@vibeeditor/agent';
 import type { McpServerUI } from '../types/mcp-ui';
+import { configService } from '../services/configService';
 
+const CFG_FILE = 'mcp-settings.json';
 const STORAGE_KEY = 'vibeeditor-mcp-servers';
 
-function loadServers(): McpServerUI[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-    }
-  } catch { /* 忽略损坏的数据 */ }
+async function loadServers(): Promise<McpServerUI[]> {
+  const data = await configService.loadJSON<{ servers?: McpServerUI[] }>(CFG_FILE, STORAGE_KEY);
+  if (data && Array.isArray(data.servers) && data.servers.length > 0) {
+    return data.servers;
+  }
   return [];
 }
 
-function saveServers(servers: McpServerUI[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(servers));
+async function saveServers(servers: McpServerUI[]) {
+  await configService.saveJSON(CFG_FILE, { servers }, STORAGE_KEY);
 }
 
 function createMcpSettings() {
-  const servers = ref<McpServerUI[]>(loadServers());
+  const servers = ref<McpServerUI[]>([]);
+
+  let initialized = false;
+  async function init() {
+    if (initialized) return;
+    initialized = true;
+    servers.value = await loadServers();
+  }
+  init();
 
   watch(servers, (val) => saveServers(val), { deep: true });
 

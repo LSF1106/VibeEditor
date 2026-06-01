@@ -7,6 +7,14 @@ thumbs.db
 
 # Electron build
 packages/electron/out/
+packages/electron/release/
+packages/electron/web-dist/
+
+# Electron workspace lockfile (only root package-lock.json needed)
+packages/electron/package-lock.json
+
+# Local MCP config (use mcp-config.example.json as template)
+mcp-config.json
 
 # IDE
 .vscode/

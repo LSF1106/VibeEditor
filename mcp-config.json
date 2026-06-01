@@ -1,9 +1,0 @@
-{
-  "mcpServers": {
-    "remote-http": {
-      "type": "http",
-      "name": "Remote HTTP Server",
-      "url": "https://mcp.ifconfig.cc"
-    }
-  }
-}

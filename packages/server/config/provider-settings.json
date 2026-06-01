@@ -1,0 +1,19 @@
+{
+  "providers": [
+    {
+      "id": "provider_1780316024302_1",
+      "name": "DeepSeek",
+      "apiUrl": "https://api.deepseek.com/v1",
+      "apiKey": "sk-2d20e6d859c843f8852a82c56fdecfcb",
+      "model": "deepseek-v4-flash"
+    },
+    {
+      "id": "provider_1780316024302_2",
+      "name": "DeepSeek",
+      "apiUrl": "https://api.deepseek.com/v1",
+      "apiKey": "sk-2d20e6d859c843f8852a82c56fdecfcb",
+      "model": "deepseek-v4-pro"
+    }
+  ],
+  "activeProviderId": "provider_1780316024302_2"
+}

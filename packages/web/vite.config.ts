@@ -1,9 +1,13 @@
 import { defineConfig } from 'vite';
 import vue from '@vitejs/plugin-vue';
 import { resolve } from 'path';
-import { readFileSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 
 const appInfo = JSON.parse(readFileSync(resolve(__dirname, '../../app-info.json'), 'utf-8'));
+
+const configPath = resolve(__dirname, '../../app-config.json');
+const appConfig = existsSync(configPath) ? JSON.parse(readFileSync(configPath, 'utf-8')) : {};
+const serverPort = appConfig.serverPort || 20385;
 
 export default defineConfig({
   plugins: [vue()],
@@ -14,13 +18,13 @@ export default defineConfig({
   },
   define: {
     __APP_INFO__: JSON.stringify(appInfo),
+    __SERVER_PORT__: serverPort,
   },
   server: {
     port: 5173,
     proxy: {
-      // 开发模式下将 /api 请求代理到 Express 后端 (localhost:3456)
       '/api': {
-        target: 'http://localhost:3456',
+        target: `http://localhost:${serverPort}`,
         changeOrigin: true,
       },
     },

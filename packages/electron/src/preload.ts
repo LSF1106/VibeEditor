@@ -16,6 +16,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openFile: () => ipcRenderer.invoke('dialog:openFile'),
   saveFile: (filePath: string, content: string) => ipcRenderer.invoke('dialog:saveFile', filePath, content),
   getAppInfo: () => ipcRenderer.invoke('app:getInfo'),
+  readConfig: (filename: string) => ipcRenderer.invoke('config:read', filename),
+  writeConfig: (filename: string, data: unknown) => ipcRenderer.invoke('config:write', filename, data),
   onMenuAction: (callback: (action: string) => void) => {
     ipcRenderer.on('menu:action', (_event, action) => callback(action));
   },

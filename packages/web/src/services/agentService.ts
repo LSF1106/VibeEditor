@@ -1,5 +1,12 @@
 import { i18n } from '../locales';
 
+declare const __SERVER_PORT__: number;
+
+const DEFAULT_BASE_URL: string = typeof __SERVER_PORT__ !== 'undefined'
+  ? `http://localhost:${__SERVER_PORT__}`
+  : '';
+
+
 /** Agent 运行配置 */
 export interface AgentConfig {
   mode: 'build' | 'plan';
@@ -26,7 +33,7 @@ export interface StreamEvent {
   content?: string;
 }
 
-export function createAgentService(baseUrl = '') {
+export function createAgentService(baseUrl = DEFAULT_BASE_URL) {
   return {
     async sendMessage(message: string, context: Record<string, unknown>, config: AgentConfig): Promise<AgentMessage> {
       const body: Record<string, unknown> = { message, context, config };

@@ -1,44 +1,63 @@
 {
-  "name": "@vibeeditor/electron",
-  "version": "0.1.0",
   "private": true,
-  "description": "VibeEditor Electron desktop app",
-  "main": "./dist/main.js",
+  "name": "vibeeditor-desktop",
+  "version": "0.1.0",
+  "main": "dist/main.js",
   "scripts": {
+    "build": "npm run build:tsc && node build.mjs",
+    "build:tsc": "tsc",
     "dev": "electron .",
-    "build": "tsc",
-    "pack": "electron-builder --dir",
-    "dist": "electron-builder"
+    "prepack": "npm run copy:assets && npm run copy:web",
+    "pack": "npm run build && npm run prepack && electron-builder --dir",
+    "dist": "npm run build && npm run prepack && electron-builder",
+    "copy:assets": "node -e \"const{cpSync}=require('fs');cpSync('../../app-info.json','app-info.json');cpSync('../../app-config.json','app-config.json');cpSync('../../config/provider-settings.json','provider-settings.json');cpSync('../../config/mcp-settings.json','mcp-settings.json')\"",
+    "copy:web": "node -e \"const{cp}=require('fs/promises');cp('../web/dist','web-dist',{recursive:true,dereference:true}).then(()=>console.log('web-dist copied'))\""
   },
-  "author": "VibeEditor",
-  "dependencies": {},
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "openai": "^6.0.0"
+  },
   "devDependencies": {
+    "@types/node": "^20.19.41",
+    "7zip-bin": "^5.2.0",
+    "app-builder-bin": "^4.0.0",
     "electron": "28.3.3",
     "electron-builder": "^24.9.1",
+    "esbuild": "^0.27.7",
     "typescript": "^5.3.3"
   },
   "build": {
-    "appId": "com.vibeeditor.app",
+    "appId": "com.vibeeditor.desktop",
     "productName": "VibeEditor",
-    "electronVersion": "28.3.3",
     "directories": {
-      "output": "out"
+      "output": "release"
     },
     "files": [
       "dist/**/*",
-      "../web/dist/**/*"
+      "web-dist/**/*",
+      "app-info.json",
+      "package.json"
     ],
+    "extraResources": [
+      { "from": "app-config.json", "to": "." },
+      { "from": "provider-settings.json", "to": "." },
+      { "from": "mcp-settings.json", "to": "." }
+    ],
+    "npmRebuild": false,
+    "includeSubNodeModules": true,
+    "asar": true,
     "win": {
-      "target": [
-        {
-          "target": "nsis",
-          "arch": ["x64"]
-        }
-      ]
+      "target": "nsis",
+      "icon": null
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
     }
   }
 }

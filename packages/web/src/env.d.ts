@@ -30,6 +30,8 @@ interface Window {
     openFile: () => Promise<{ path: string } | null>;
     saveFile: (path: string, content: string) => Promise<string | null>;
     getAppInfo: () => Promise<{ name: string; version: string; author: string }>;
+    readConfig: (filename: string) => Promise<unknown>;
+    writeConfig: (filename: string, data: unknown) => Promise<void>;
     onMenuAction: (callback: (action: string) => void) => void;
     minimizeWindow: () => Promise<void>;
     maximizeWindow: () => Promise<void>;
@@ -40,6 +42,8 @@ interface Window {
     resizeWindow: (x: number, y: number, w: number, h: number) => Promise<void>;
     onMaximizeChange: (callback: (isMaximized: boolean) => void) => void;
   };
+  /** Electron 主进程注入的服务器端口号 */
+  __VIBE_SERVER_PORT__?: number;
 }
 
 // 构建时从 app-info.json 注入的全局常量
