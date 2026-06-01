@@ -14,7 +14,7 @@
   "scripts": {
     "dev:server": "npm run build:agent && npm run build:core && npm run dev -w packages/server",
     "dev:web": "npm run build:agent && npm run build:core && npm run dev -w packages/web",
-    "dev:electron": "npm run build:agent && npm run build:core && npm run build:electron && concurrently \"npm run dev -w packages/server\" \"npm run dev -w packages/web\" \"npm run dev -w packages/electron\"",
+    "dev:electron": "npm run build:agent && npm run build:core && npm run build:electron && concurrently \"npm run dev -w packages/web\" \"npm run dev -w packages/electron\"",
     "dev:all": "npm run build:agent && npm run build:core && concurrently \"npm run dev -w packages/server\" \"npm run dev -w packages/web\"",
     "build:agent": "npm run build -w packages/agent",
     "build:core": "npm run build -w packages/core",
