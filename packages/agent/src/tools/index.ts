@@ -1,9 +1,11 @@
 import type { ITool } from '../types/tool';
+import { BashTool } from './bash';
 import { ReadFileTool } from './read-file';
 import { ListDirTool } from './list-dir';
 import { SearchCodeTool } from './search-code';
 import { DelegateTool } from './delegate';
 
+export { BashTool } from './bash';
 export { ReadFileTool } from './read-file';
 export { ListDirTool } from './list-dir';
 export { SearchCodeTool } from './search-code';
@@ -15,6 +17,7 @@ export function createDefaultTools(): ITool[] {
     new ReadFileTool(),
     new ListDirTool(),
     new SearchCodeTool(),
+    new BashTool(),
     new DelegateTool(),
   ];
 }
