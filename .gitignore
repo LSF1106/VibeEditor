@@ -16,6 +16,13 @@ packages/electron/package-lock.json
 # Local MCP config (use mcp-config.example.json as template)
 mcp-config.json
 
+# Local runtime config files (user-specific, may contain secrets)
+config/
+packages/electron/config/
+packages/electron/mcp-settings.json
+packages/electron/provider-settings.json
+packages/server/config/
+
 # IDE
 .vscode/
 .idea/
