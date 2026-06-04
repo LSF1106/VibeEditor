@@ -50,7 +50,7 @@ interface Window {
 declare const __APP_INFO__: {
   name: string;
   version: string;
-  author: string;
+  authors: { name: string; github: string }[];
 };
 
 // 浏览器 File System Access API 类型声明（部分浏览器可能不支持）

@@ -168,7 +168,7 @@ function buildMenu(): Electron.MenuItemConstructorOptions[] {
               type: 'info',
               title: `About ${appInfo.name}`,
               message: appInfo.name,
-              detail: `Version: ${appInfo.version}\nAuthor: ${appInfo.author}`,
+              detail: `Version: ${appInfo.version}\nAuthor: ${appInfo.authors.map((a: { name: string }) => a.name).join('、')}`,
             });
           },
         },

@@ -13,7 +13,12 @@
         </div>
         <div class="about-row">
           <span class="about-label">{{ $t('about.author') }}</span>
-          <span class="about-value">{{ appInfo.author }}</span>
+          <span class="about-value">
+            <template v-for="(author, index) in appInfo.authors" :key="author.github">
+              <a class="about-link" :href="author.github" target="_blank" rel="noopener">{{ author.name }}</a>
+              <template v-if="index < appInfo.authors.length - 1">、</template>
+            </template>
+          </span>
         </div>
         <div class="about-row">
           <span class="about-label">{{ $t('about.repo') }}</span>

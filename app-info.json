@@ -1,5 +1,9 @@
 {
   "name": "VibeEditor",
   "version": "0.0.1",
-  "author": "ZJH、WY、LSF"
+  "authors": [
+    { "name": "ZJH", "github": "https://github.com/zbeeeeeeeeee" },
+    { "name": "WY", "github": "https://github.com/yishuw" },
+    { "name": "LSF", "github": "https://github.com/LSF1106" }
+  ]
 }
