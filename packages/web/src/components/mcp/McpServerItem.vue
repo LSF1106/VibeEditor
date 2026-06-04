@@ -51,12 +51,11 @@ defineEmits<{
 const expanded = ref(false);
 
 const typeLabel = computed(() => {
-  switch (props.server.config.type) {
-    case 'stdio': return 'STDIO';
-    case 'http': return 'HTTP';
-    case 'sse': return 'SSE';
-    default: return props.server.config.type.toUpperCase();
-  }
+  const t: string = props.server.config.type;
+  if (t === 'stdio') return 'STDIO';
+  if (t === 'http') return 'HTTP';
+  if (t === 'sse') return 'SSE';
+  return t.toUpperCase();
 });
 
 const typeBadgeClass = computed(() => `badge-${props.server.config.type}`);

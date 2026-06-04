@@ -52,7 +52,26 @@ export interface HttpServerConfig {
 /** MCP 服务器配置联合类型 */
 export type McpServerConfig = StdioServerConfig | SseServerConfig | HttpServerConfig;
 
-/** MCP 配置文件顶层结构 */
+/** MCP 配置文件顶层结构（runtime 内部使用，key → config 映射） */
 export interface McpConfig {
   mcpServers: Record<string, McpServerConfig>;
+}
+
+/**
+ * MCP 服务器持久化条目 —— 包装纯协议配置 + 管理元数据。
+ *
+ * 用于持久化文件 (mcp-settings.json) 的读写，
+ * McpConfig 仍然作为 runtime 连接时的内部格式。
+ */
+export interface McpServerEntry {
+  id: string;
+  name?: string;
+  description?: string;
+  enabled: boolean;
+  config: McpServerConfig;
+}
+
+/** 持久化文件格式 */
+export interface McpSettingsFile {
+  servers: McpServerEntry[];
 }

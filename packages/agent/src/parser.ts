@@ -43,6 +43,13 @@ export function parseToolCalls(text: string, registeredTags?: string[]): ParsedT
   return tools;
 }
 
+function isPlaceholderPath(p: string): boolean {
+  const placeholders = ['path/to/file', 'path/to/File'];
+  if (placeholders.includes(p)) return true;
+  if (/^path\/to\/\w+$/i.test(p)) return true;
+  return false;
+}
+
 /**
  * 从 LLM 回复中解析 <edit path="...">...</edit> 编辑块
  */
@@ -53,6 +60,7 @@ export function parseEditsFromText(text: string): ParsedEdit[] {
 
   while ((match = re.exec(text)) !== null) {
     const filePath = match[1].trim();
+    if (isPlaceholderPath(filePath)) continue;
     let rawContent = match[2].trim();
 
     const codeBlockRe = /^```[\w]*\n([\s\S]*?)\n```$/;

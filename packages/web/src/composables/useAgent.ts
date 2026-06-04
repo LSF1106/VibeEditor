@@ -2,11 +2,9 @@ import { ref } from 'vue';
 import { createAgentService } from '../services/agentService';
 import type { AgentConfig, StreamEvent } from '../services/agentService';
 import type { ProviderConfig } from './useProviderSettings';
-import { parseEditsFromText, type ParsedEdit } from '../services/editParser';
+import type { ParsedEdit } from '../services/editParser';
 import { useEditorStore } from '../stores/editor';
 import { getEditorInstance } from '../services/editorInstance';
-import { useMcpSettings } from './useMcpSettings';
-import type { McpConfig } from '@vibeeditor/agent';
 
 /** Agent 运行上下文 —— 当前 IDE 环境快照 */
 export interface AgentContext {
@@ -33,9 +31,9 @@ export interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
   thinking?: string;
+  edits?: { path: string; content: string }[];
   timestamp: number;
   editOperations?: ParsedEdit[];
-  /** 按时间顺序排列的消息块（助手消息） */
   blocks?: MessageBlock[];
   /** @deprecated 使用 blocks 替代 */
   toolNodes?: ToolCallNode[];
@@ -117,10 +115,9 @@ export function useAgent(sessionId?: string) {
 
   function extractEdits(msg: ChatMessage) {
     if (config.value.mode === 'build') {
-      const edits = parseEditsFromText(msg.content);
-      if (edits.length > 0) {
-        msg.editOperations = edits;
-        lastEdits.value = edits;
+      if (msg.edits && msg.edits.length > 0) {
+        msg.editOperations = msg.edits;
+        lastEdits.value = msg.edits;
       }
     }
   }
@@ -223,23 +220,10 @@ export function useAgent(sessionId?: string) {
       const ctx = buildAgentContext(activeFilePath);
       const history = messages.value.slice(0, -1).filter(m => m.id !== assistantMsgId);
 
-      // 构建 MCP 配置：读取已启用的 MCP 服务器
-      const mcpSettings = useMcpSettings();
-      const enabledServers = mcpSettings.servers.value.filter(s => s.enabled);
-      let mcpConfig: McpConfig | undefined;
-      if (enabledServers.length > 0) {
-        const mcpServers: Record<string, any> = {};
-        for (const s of enabledServers) {
-          mcpServers[s.id] = s.config;
-        }
-        mcpConfig = { mcpServers };
-      }
-
       const streamCtx = {
         ...ctx,
         conversationHistory: history,
         workspaceRoot: store.workspaceRoot || undefined,
-        mcpConfig,
         sessionId,
       };
       await service.streamMessage(

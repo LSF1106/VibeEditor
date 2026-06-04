@@ -113,7 +113,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   close: [];
-  saved: [config: McpServerConfig, name: string, description: string, tools: McpToolInfo[]];
+  saved: [id: string, config: McpServerConfig, name: string, description: string, tools: McpToolInfo[]];
 }>();
 
 const isEdit = computed(() => !!props.server);
@@ -273,14 +273,27 @@ async function handleSave() {
 
   try {
     const config = buildConfig();
-    const result = await mcpService.testConnection(config);
+    const name = form.name.trim();
+    const description = form.description.trim();
+
+    // 保存到服务端（新增或更新），获取 ID
+    let serverId: string;
+    if (isEdit.value && props.server) {
+      await mcpService.updateServer(props.server.id, { config, name, description, enabled: props.server.enabled });
+      serverId = props.server.id;
+    } else {
+      const entry = await mcpService.addServer({ config, name, description, enabled: true });
+      serverId = entry.id;
+    }
+
+    // 测试连通性
+    const result = await mcpService.testServer(serverId);
 
     if (result.success && result.tools) {
       resultMsg.value = t('mcp.testSuccess', { n: result.tools.length });
       resultSuccess.value = true;
-      // 等待一小段时间让用户看到成功信息，然后触发 saved
       setTimeout(() => {
-        emit('saved', config, form.name.trim(), form.description.trim(), result.tools!);
+        emit('saved', serverId, config, name, description, result.tools!);
       }, 600);
     } else {
       resultMsg.value = `${t('mcp.testFailed')}: ${result.error || 'Unknown error'}`;

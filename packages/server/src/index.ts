@@ -2,8 +2,8 @@ import express from 'express';
 import cors from 'cors';
 import { createServer } from 'http';
 import { filesRouter } from './routes/files';
-import { agentRouter } from './routes/agent';
-import { mcpRouter } from './routes/mcp';
+import { createAgentRouter } from './routes/agent';
+import { createMcpRouter } from './routes/mcp';
 import { createConfigRouter } from './routes/config';
 
 export interface ServerConfig {
@@ -24,8 +24,8 @@ export function createApp(config: ServerConfig = {}) {
   app.use(express.json({ limit: '50mb' }));
 
   app.use('/api/files', filesRouter);
-  app.use('/api/agent', agentRouter);
-  app.use('/api/mcp', mcpRouter);
+  app.use('/api/agent', createAgentRouter(configDir));
+  app.use('/api/mcp', createMcpRouter(configDir));
   app.use('/api/config', createConfigRouter(configDir));
 
   app.get('/api/health', (_req, res) => {

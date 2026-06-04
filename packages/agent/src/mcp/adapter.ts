@@ -14,6 +14,7 @@ type MCPToolDefinition = ListToolsResult['tools'][number];
  */
 export class MCPToolAdapter implements ITool {
   readonly name: string;
+  readonly originalName: string;
   readonly description: string;
   readonly usage: string;
   readonly inputSchema: ToolInputSchema;
@@ -25,9 +26,11 @@ export class MCPToolAdapter implements ITool {
   constructor(
     definition: MCPToolDefinition,
     usage: string,
-    callHandler: (name: string, args: Record<string, unknown>) => Promise<CallToolResult>
+    callHandler: (name: string, args: Record<string, unknown>) => Promise<CallToolResult>,
+    overrideName?: string
   ) {
-    this.name = definition.name;
+    this.originalName = definition.name;
+    this.name = overrideName || definition.name;
     this.description = definition.description || definition.name;
     this.usage = usage;
     this.inputSchema = definition.inputSchema as ToolInputSchema;
@@ -39,7 +42,7 @@ export class MCPToolAdapter implements ITool {
   async execute(params: Record<string, string>, _context: ToolExecutionContext): Promise<string> {
     try {
       const args = this.coerceParams(params);
-      const result = await this.callHandler(this.name, args);
+      const result = await this.callHandler(this.originalName, args);
       return formatMCPResult(this.name, result);
     } catch (e: any) {
       return `MCP tool error (${this.name}): ${e.message}`;

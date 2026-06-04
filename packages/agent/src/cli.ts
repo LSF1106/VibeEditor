@@ -1,100 +1,45 @@
 /**
  * Agent 命令行测试工具
  *
- * 无需启动完整项目即可在终端中测试 Agent、Session、Tool、MCP 等模块。
- *
  * 用法:
  *   npx tsx cli.ts                          # Agent 对话模式（流式输出）
  *   npx tsx cli.ts --mcp                    # MCP 手动工具调用模式
  *   npx tsx cli.ts --list                   # 列出所有可用工具
  *   npx tsx cli.ts --no-mcp                 # 跳过 MCP，仅使用内置工具
  *   npx tsx cli.ts --config mcp-config.json # 指定 MCP 配置文件
- *   npx tsx cli.ts --root /path/to/project  # 设置工作目录（文件工具使用）
+ *   npx tsx cli.ts --root /path/to/project  # 设置工作目录
  */
 
 import * as readline from 'readline';
 import * as fs from 'fs';
 import * as path from 'path';
-import { Agent, type AgentEvent } from './agent';
-import { Session, type SessionEvent } from './session';
+import { AgentRuntime, type AgentRuntimeEvent, type AgentRuntimeConfig } from './runtime';
+import type { AgentContext } from './types/agent';
 import { McpManager } from './mcp/manager';
 import { ToolCatalog } from './mcp/tool-catalog';
-import type { McpConfig } from './mcp/config';
+import type { McpConfig, McpServerEntry } from './mcp/config';
 import type { McpToolInfo } from './mcp/manager';
-import type { AgentDefinition, AgentContext } from './types/agent';
-import type { IAgentFileSystem, FileEntry } from './types/filesystem';
-import type { AgentConfig } from './types/agent';
 
 // ====================== LLM 配置 ======================
 
-const AGENT_CONFIG: AgentConfig = {
-  mode: 'build',
+const PROVIDER_CONFIG = {
   apiUrl: 'https://api.deepseek.com/v1',
   apiKey: 'sk-2d20e6d859c843f8852a82c56fdecfcb',
   model: 'deepseek-v4-flash',
 };
 
-// ====================== Agent 定义 ======================
-
-const MAIN_AGENT: AgentDefinition = {
-  id: 'main',
-  name: 'VibeEditor',
-  description: 'AI code editor assistant',
-  systemPrompt: `You are an AI code editor assistant with access to tools for reading, writing, and searching files.
-Use the available tools to help the user with their coding tasks.
-- Use <read_file path="..."/> to read file contents
-- Use <list_dir path="..."/> to list directory contents
-- Use <search_code pattern="..." path="..."/> to search code
-- Use <delegate agent="..." task="..."/> to delegate to sub-agents
-Always respond in the user's language. Be concise and helpful.`,
-  maxTurns: 15,
-};
-
-const CODE_REVIEWER: AgentDefinition = {
-  id: 'code-reviewer',
-  name: 'Code Reviewer',
-  description: 'Reviews code for bugs and improvements',
-  systemPrompt: `You are a code reviewer. Review the given code for:
-1. Bugs and potential errors
-2. Performance issues
-3. Code style and readability
-4. Security concerns
-Provide a concise review with actionable suggestions.`,
-  maxTurns: 3,
-};
-
-// ====================== 文件系统 (实现 IAgentFileSystem) ======================
-
-/** 基于 Node.js fs 的 IAgentFileSystem 实现 */
-function createNodeFileSystem(root: string): IAgentFileSystem {
-  const fsp = fs.promises;
-
-  function safePath(inputPath: string): string {
-    const resolved = path.resolve(root, inputPath);
-    if (!resolved.startsWith(root)) throw new Error(`Path traversal denied: ${inputPath}`);
-    return resolved;
-  }
-
+function buildRuntimeConfig(workDir: string, mcpServers?: McpServerEntry[]): AgentRuntimeConfig {
   return {
-    async readFile(filePath: string): Promise<string> {
-      return fsp.readFile(safePath(filePath), 'utf-8');
-    },
-    async writeFile(filePath: string, content: string): Promise<void> {
-      await fsp.writeFile(safePath(filePath), content, 'utf-8');
-    },
-    async exists(filePath: string): Promise<boolean> {
-      try { await fsp.access(safePath(filePath)); return true; } catch { return false; }
-    },
-    async readDir(dirPath: string): Promise<FileEntry[]> {
-      const entries = await fsp.readdir(safePath(dirPath), { withFileTypes: true });
-      return entries.map(e => ({ name: e.name, isDirectory: e.isDirectory() }));
-    },
+    mode: 'build',
+    provider: PROVIDER_CONFIG,
+    workspaceRoot: workDir,
+    mcpServers,
+    maxTurns: 15,
   };
 }
 
 // ====================== MCP 集成 ======================
 
-/** 在 cwd 及各级父目录中查找 mcp-config.json */
 function findConfigPath(explicitPath?: string): string | null {
   if (explicitPath) return fs.existsSync(explicitPath) ? explicitPath : null;
 
@@ -109,27 +54,36 @@ function findConfigPath(explicitPath?: string): string | null {
   return null;
 }
 
-async function connectMCP(configPath?: string): Promise<{ manager: McpManager; tools: McpToolInfo[] } | null> {
+function loadMcpServers(configPath?: string): McpServerEntry[] {
   const resolvedPath = findConfigPath(configPath);
-  if (!resolvedPath) {
-    const hint = configPath || path.resolve(process.cwd(), 'mcp-config.json');
-    console.log(`(no MCP config found (looked up to 10 parent dirs from ${hint}), using built-in tools only)\n`);
-    return null;
-  }
+  if (!resolvedPath) return [];
 
   const raw = fs.readFileSync(resolvedPath, 'utf-8');
   const config: McpConfig = JSON.parse(raw);
   console.log(`[MCP] Using config: ${resolvedPath}`);
 
+  return Object.entries(config.mcpServers).map(([id, cfg]) => ({
+    id,
+    name: cfg.name || id,
+    enabled: true,
+    config: cfg,
+  }));
+}
+
+async function createMcpManager(entries: McpServerEntry[]): Promise<{ manager: McpManager; tools: McpToolInfo[] } | null> {
+  if (entries.length === 0) return null;
+  const mcpConfig: McpConfig = { mcpServers: {} };
+  for (const e of entries) mcpConfig.mcpServers[e.id] = e.config;
+
   const manager = new McpManager();
-  await manager.connectAll(config);
+  await manager.connectAll(mcpConfig);
   const tools = await manager.collectTools();
   return { manager, tools };
 }
 
-// ====================== 辅助函数 ======================
+// ====================== Agent 对话模式 ======================
 
-function buildContext(_workDir: string): AgentContext {
+function buildContext(): AgentContext {
   return {
     openFiles: [],
     fileTree: [],
@@ -138,34 +92,14 @@ function buildContext(_workDir: string): AgentContext {
   };
 }
 
-// ====================== Agent 对话模式（默认） ======================
+async function runAgentLoop(mcpManager: McpManager | null, mcpServers: McpServerEntry[], workDir: string): Promise<void> {
+  const runtime = new AgentRuntime(buildRuntimeConfig(workDir, mcpServers));
+  await runtime.initialize();
 
-async function runAgentLoop(mcpManager: McpManager | null, mcpTools: McpToolInfo[], workDir: string): Promise<void> {
-  const fileSystem = createNodeFileSystem(workDir);
+  const mcpStatus = runtime.mcpStatus;
 
-  // 创建主 Agent（内置工具由 Agent 构造器自动注册）
-  const mainAgent = new Agent(MAIN_AGENT, AGENT_CONFIG, fileSystem);
-
-  // 注册 MCP 工具
-  if (mcpManager) {
-    const mcpAdapters = mcpManager.createToolAdapters();
-    for (const tool of mcpAdapters) {
-      mainAgent.registerTool(tool);
-    }
-  }
-
-  // 创建子 Agent
-  const reviewer = new Agent(CODE_REVIEWER, AGENT_CONFIG, fileSystem);
-
-  // 创建 Session
-  const session = new Session('cli-session', fileSystem, mainAgent);
-  session.registerSubAgent(reviewer);
-
-  const toolCount = mainAgent.getToolRegistry().size;
-  const mcpCount = mcpManager ? mcpManager.serverCount : 0;
-
-  console.log(`\n🤖 Model: ${AGENT_CONFIG.model}`);
-  console.log(`🔧 Tools: ${toolCount} (built-in)${mcpCount ? ` + ${mcpCount} MCP server(s)` : ''}`);
+  console.log(`\n🤖 Model: ${PROVIDER_CONFIG.model}`);
+  console.log(`🔧 Tools: 5 (built-in)${mcpStatus.serverCount ? ` + ${mcpStatus.serverCount} MCP server(s), ${mcpStatus.toolCount} tool(s)` : ''}`);
   console.log(`📁 Work dir: ${workDir}`);
   console.log('Commands: /exit, /clear, /tools\n');
 
@@ -183,55 +117,50 @@ async function runAgentLoop(mcpManager: McpManager | null, mcpTools: McpToolInfo
     if (trimmed === '/exit' || trimmed === '/quit') {
       console.log('\nDisconnecting...');
       if (mcpManager) await mcpManager.disconnectAll();
+      await runtime.dispose();
       rl.close();
       return;
     }
 
     if (trimmed === '/clear') {
-      console.log('🔄 Session cleared. (new Session needed for full reset)');
+      console.log('🔄 Session cleared.');
       rl.prompt();
       return;
     }
 
     if (trimmed === '/tools') {
-      printTools(mainAgent, mcpTools);
+      printBuiltInTools();
+      printMCPTools(mcpManager);
       rl.prompt();
       return;
     }
 
-    // 流式运行 Session
     process.stdout.write('\n🤖 AI> ');
     const startTime = Date.now();
 
     try {
-      await session.start(trimmed, buildContext(workDir), (e: SessionEvent) => {
+      const result = await runtime.chatStream(trimmed, buildContext(), (e: AgentRuntimeEvent) => {
         switch (e.type) {
           case 'thinking':
             process.stdout.write(`\n💭 `);
             break;
           case 'chunk':
-            if (e.data && e.agentId === 'main') process.stdout.write(e.data);
+            if (e.text) process.stdout.write(e.text);
             break;
           case 'tool_start':
-            process.stdout.write(`\n\n🔧 [${e.toolType}]${e.toolLabel ? ' ' + e.toolLabel : ''} `);
+            process.stdout.write(`\n\n🔧 [${e.toolName}]${e.toolLabel ? ' ' + e.toolLabel : ''} `);
             break;
           case 'tool_end':
             process.stdout.write(`✅`);
             break;
-          case 'sub_agent_start':
-            process.stdout.write(`\n\n📋 [sub-agent: ${e.agentId}]\n`);
-            break;
-          case 'sub_agent_done':
-            if (e.data) process.stdout.write(`\n${e.data}`);
-            break;
           case 'error':
-            process.stdout.write(`\n❌ ${e.data || 'unknown error'}`);
+            process.stdout.write(`\n❌ ${e.error || 'unknown error'}`);
             break;
         }
       });
 
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-      console.log(`\n\n[${elapsed}s]`);
+      console.log(`\n\n[${elapsed}s]${result.edits.length ? ` | ${result.edits.length} edit(s)` : ''}`);
     } catch (e: any) {
       console.log(`\n❌ Error: ${e.message}`);
     }
@@ -239,31 +168,37 @@ async function runAgentLoop(mcpManager: McpManager | null, mcpTools: McpToolInfo
     rl.prompt();
   });
 
-  rl.on('close', () => {
+  rl.on('close', async () => {
+    await runtime.dispose();
     console.log('Goodbye.');
     process.exit(0);
   });
 }
 
-// ====================== 工具列表 ======================
-
-function printTools(agent: Agent, mcpTools: McpToolInfo[]): void {
-  const registry = agent.getToolRegistry();
+function printBuiltInTools(): void {
   console.log('\n--- Built-in Tools ---');
-  for (const name of registry.getTagNames()) {
-    const tool = registry.get(name);
-    if (tool) {
-      console.log(`  <${name}/> — ${tool.description}`);
-    }
+  const tools = ['read_file', 'list_dir', 'search_code', 'bash', 'delegate'];
+  const descs: Record<string, string> = {
+    read_file: 'Read a file not currently in context',
+    list_dir: 'List directory contents',
+    search_code: 'Search code with regex pattern',
+    bash: 'Execute a shell command',
+    delegate: 'Delegate a task to a sub-agent',
+  };
+  for (const name of tools) {
+    console.log(`  <${name}/> — ${descs[name] || ''}`);
   }
+  console.log('');
+}
 
-  if (mcpTools.length > 0) {
-    console.log('\n--- MCP Tools ---');
-    const catalog = new ToolCatalog();
-    catalog.addFromManager(mcpTools);
-    catalog.printAll();
-  }
-
+function printMCPTools(mcpManager: McpManager | null): void {
+  if (!mcpManager || mcpManager.serverCount === 0) return;
+  const mcpTools = mcpManager.getTools();
+  if (mcpTools.length === 0) return;
+  console.log('--- MCP Tools ---');
+  const catalog = new ToolCatalog();
+  catalog.addFromManager(mcpTools);
+  catalog.printAll();
   console.log('');
 }
 
@@ -376,52 +311,62 @@ async function main(): Promise<void> {
 
   const args = parseArgs(process.argv.slice(2));
 
-  // MCP 连接（默认自动查找 mcp-config.json，--no-mcp 跳过）
-  let mcpResult: { manager: McpManager; tools: McpToolInfo[] } | null = null;
-  if (!args.noMcp) {
-    try {
-      mcpResult = await connectMCP(args.configPath);
-    } catch (e: any) {
-      console.error(`MCP connection failed: ${e.message}`);
-      console.error('Continuing with built-in tools only.\n');
-    }
-  }
+  const mcpServers = args.noMcp ? [] : loadMcpServers(args.configPath);
 
   switch (args.mode) {
     case 'list': {
-      console.log('\n--- Built-in Tools ---');
-      const fs = createNodeFileSystem(args.workDir);
-      const agent = new Agent(MAIN_AGENT, AGENT_CONFIG, fs);
-      for (const name of agent.getToolRegistry().getTagNames()) {
-        const tool = agent.getToolRegistry().get(name);
-        if (tool) console.log(`  <${name}/> — ${tool.description}`);
-      }
-      if (mcpResult) {
-        const catalog = new ToolCatalog();
-        catalog.addFromManager(mcpResult.tools);
-        catalog.printAll();
-        await mcpResult.manager.disconnectAll();
+      printBuiltInTools();
+      if (mcpServers.length > 0) {
+        try {
+          const mcpResult = await createMcpManager(mcpServers);
+          if (mcpResult) {
+            printMCPTools(mcpResult.manager);
+            await mcpResult.manager.disconnectAll();
+          }
+        } catch (e: any) {
+          console.error(`MCP connection failed: ${e.message}`);
+        }
       }
       break;
     }
 
     case 'mcp': {
-      if (!mcpResult) {
-        console.log('No MCP servers connected. Use --config to specify a config file.');
+      if (mcpServers.length === 0) {
+        console.log('No MCP servers configured. Use --config to specify a config file.');
         process.exit(1);
       }
-      await runMcpManualLoop(mcpResult.manager, mcpResult.tools);
+      try {
+        const mcpResult = await createMcpManager(mcpServers);
+        if (!mcpResult) {
+          console.log('No MCP servers connected.');
+          process.exit(1);
+        }
+        await runMcpManualLoop(mcpResult.manager, mcpResult.tools);
+      } catch (e: any) {
+        console.error(`MCP connection failed: ${e.message}`);
+        process.exit(1);
+      }
       break;
     }
 
     case 'agent':
-    default:
-      await runAgentLoop(
-        mcpResult?.manager || null,
-        mcpResult?.tools || [],
-        args.workDir
-      );
+    default: {
+      let mcpManager: McpManager | null = null;
+      let activeServers = mcpServers;
+      if (!args.noMcp && mcpServers.length > 0) {
+        try {
+          const result = await createMcpManager(mcpServers);
+          if (result) {
+            mcpManager = result.manager;
+          }
+        } catch (e: any) {
+          console.error(`MCP connection failed: ${e.message}`);
+          console.error('Continuing with built-in tools only.\n');
+        }
+      }
+      await runAgentLoop(mcpManager, activeServers, args.workDir);
       break;
+    }
   }
 }
 

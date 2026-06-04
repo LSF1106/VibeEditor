@@ -1,88 +1,113 @@
-import { ref, watch } from 'vue';
-import type { McpServerConfig, McpToolInfo } from '@vibeeditor/agent';
+import { ref } from 'vue';
+import type { McpServerConfig, McpServerEntry, McpToolInfo } from '@vibeeditor/agent';
 import type { McpServerUI } from '../types/mcp-ui';
-import { configService } from '../services/configService';
-
-const CFG_FILE = 'mcp-settings.json';
-const STORAGE_KEY = 'vibeeditor-mcp-servers';
-
-async function loadServers(): Promise<McpServerUI[]> {
-  const data = await configService.loadJSON<{ servers?: McpServerUI[] }>(CFG_FILE, STORAGE_KEY);
-  if (data && Array.isArray(data.servers) && data.servers.length > 0) {
-    return data.servers;
-  }
-  return [];
-}
-
-async function saveServers(servers: McpServerUI[]) {
-  await configService.saveJSON(CFG_FILE, { servers }, STORAGE_KEY);
-}
+import { getMcpService } from '../services/mcpService';
 
 function createMcpSettings() {
   const servers = ref<McpServerUI[]>([]);
+  const loading = ref(false);
+  const error = ref<string | null>(null);
 
   let initialized = false;
+
   async function init() {
     if (initialized) return;
     initialized = true;
-    servers.value = await loadServers();
+    await refresh();
   }
-  init();
 
-  watch(servers, (val) => saveServers(val), { deep: true });
+  async function refresh() {
+    loading.value = true;
+    error.value = null;
+    try {
+      const entries = await getMcpService().listServers();
+      servers.value = entries.map(e => {
+        const entryName = e.name || e.id;
+        return {
+          id: e.id,
+          name: entryName,
+          description: e.description,
+          enabled: e.enabled,
+          config: e.config,
+          toolCount: 0,
+          tools: undefined,
+        } satisfies McpServerUI;
+      });
+    } catch (e: any) {
+      error.value = e.message || String(e);
+    } finally {
+      loading.value = false;
+    }
+  }
 
-  let idCounter = 0;
-
-  function addServer(config: McpServerConfig, name: string, description: string, tools: McpToolInfo[]): McpServerUI {
-    const id = `mcp_${Date.now()}_${++idCounter}`;
-    const server: McpServerUI = {
-      id,
-      name: name || config.name || id,
-      description: description || undefined,
-      config: { ...config, name: name || config.name },
-      enabled: true,
-      toolCount: tools.length,
+  async function addServer(config: McpServerConfig, name: string, description: string, tools?: McpToolInfo[]): Promise<McpServerUI> {
+    const entry = await getMcpService().addServer({ config, name, description, enabled: true });
+    const ui: McpServerUI = {
+      id: entry.id,
+      name: entry.name || entry.id,
+      description: entry.description,
+      enabled: entry.enabled,
+      config: entry.config,
+      toolCount: tools?.length || 0,
       tools,
     };
-    servers.value.push(server);
-    return server;
+    servers.value.push(ui);
+    return ui;
   }
 
-  function updateServer(id: string, config: McpServerConfig, name: string, description: string, tools: McpToolInfo[]): void {
+  async function updateServer(id: string, config: McpServerConfig, name: string, description: string, enabled?: boolean, tools?: McpToolInfo[]): Promise<void> {
+    const entry = await getMcpService().updateServer(id, { config, name, description, enabled });
     const idx = servers.value.findIndex(s => s.id === id);
     if (idx === -1) return;
+    const old = servers.value[idx];
     servers.value[idx] = {
-      ...servers.value[idx],
-      name: name || config.name || id,
-      description: description || undefined,
-      config: { ...config, name: name || config.name },
-      toolCount: tools.length,
-      tools,
+      id: entry.id,
+      name: entry.name || entry.id,
+      description: entry.description,
+      enabled: entry.enabled,
+      config: entry.config,
+      toolCount: tools !== undefined ? tools.length : old.toolCount,
+      tools: tools !== undefined ? tools : old.tools,
     };
   }
 
-  function removeServer(id: string): void {
+  async function removeServer(id: string): Promise<void> {
+    await getMcpService().deleteServer(id);
     const idx = servers.value.findIndex(s => s.id === id);
     if (idx === -1) return;
     servers.value.splice(idx, 1);
   }
 
-  function toggleServer(id: string): void {
+  async function toggleServer(id: string): Promise<void> {
     const server = servers.value.find(s => s.id === id);
-    if (server) {
-      server.enabled = !server.enabled;
-    }
+    if (!server) return;
+    const newEnabled = !server.enabled;
+    await getMcpService().updateServer(id, { enabled: newEnabled });
+    server.enabled = newEnabled;
   }
 
-  function setTools(id: string, tools: McpToolInfo[]): void {
+  async function setTools(id: string, tools: McpToolInfo[]): Promise<void> {
     const server = servers.value.find(s => s.id === id);
-    if (server) {
-      server.tools = tools;
-      server.toolCount = tools.length;
-    }
+    if (!server) return;
+    server.tools = tools;
+    server.toolCount = tools.length;
   }
 
-  return { servers, addServer, updateServer, removeServer, toggleServer, setTools };
+  function addLocal(id: string, config: McpServerConfig, name: string, description: string, tools: McpToolInfo[]): void {
+    servers.value.push({
+      id,
+      name: name || id,
+      description: description || undefined,
+      enabled: true,
+      config,
+      toolCount: tools.length,
+      tools,
+    });
+  }
+
+  init();
+
+  return { servers, loading, error, addServer, updateServer, removeServer, toggleServer, setTools, addLocal, refresh };
 }
 
 let instance: ReturnType<typeof createMcpSettings> | null = null;
