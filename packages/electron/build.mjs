@@ -14,8 +14,6 @@ await esbuild.build({
     'express',
     'cors',
     'openai',
-    '@modelcontextprotocol/sdk',
-    '@modelcontextprotocol/sdk/*',
   ],
 });
 

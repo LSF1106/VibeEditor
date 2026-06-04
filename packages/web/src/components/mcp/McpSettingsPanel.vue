@@ -61,11 +61,12 @@ function openEditDialog(server: McpServerUI) {
   dialogVisible.value = true;
 }
 
-function handleSaved(config: McpServerConfig, name: string, description: string, tools: McpToolInfo[]) {
+async function handleSaved(id: string, config: McpServerConfig, name: string, description: string, tools: McpToolInfo[]) {
   if (editingServer.value) {
-    settings.updateServer(editingServer.value.id, config, name, description, tools);
+    settings.setTools(id, tools);
   } else {
-    settings.addServer(config, name, description, tools);
+    // 服务端已保存，直接更新本地状态（含工具列表）
+    settings.addLocal(id, config, name, description, tools);
   }
   dialogVisible.value = false;
   editingServer.value = null;

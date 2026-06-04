@@ -8,6 +8,8 @@ export type {
   HttpServerConfig,
   McpServerConfig,
   McpConfig,
+  McpServerEntry,
+  McpSettingsFile,
 } from './config';
 
 // 核心类
