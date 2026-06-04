@@ -677,9 +677,13 @@ onMounted(async () => {
 
 /** 侧边栏（文件树）宽度拖拽 */
 function startSidebarResize(e: MouseEvent) {
+  e.preventDefault();
   isResizingSidebar = true;
   const startX = e.clientX;
   const startWidth = sidebarWidth.value;
+
+  document.body.style.cursor = 'col-resize';
+  document.body.style.userSelect = 'none';
 
   const onMove = (ev: MouseEvent) => {
     if (!isResizingSidebar) return;
@@ -688,19 +692,27 @@ function startSidebarResize(e: MouseEvent) {
 
   const onUp = () => {
     isResizingSidebar = false;
-    document.removeEventListener('mousemove', onMove);
-    document.removeEventListener('mouseup', onUp);
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    window.removeEventListener('mousemove', onMove, true);
+    window.removeEventListener('mouseup', onUp, true);
+    window.removeEventListener('blur', onUp);
   };
 
-  document.addEventListener('mousemove', onMove);
-  document.addEventListener('mouseup', onUp);
+  window.addEventListener('mousemove', onMove, true);
+  window.addEventListener('mouseup', onUp, true);
+  window.addEventListener('blur', onUp);
 }
 
 /** 右侧面板宽度拖拽（向左拖拽拉宽面板） */
 function startRightPanelResize(e: MouseEvent) {
+  e.preventDefault();
   isResizingRightPanel = true;
   const startX = e.clientX;
   const startWidth = rightPanelWidth.value;
+
+  document.body.style.cursor = 'col-resize';
+  document.body.style.userSelect = 'none';
 
   const onMove = (ev: MouseEvent) => {
     if (!isResizingRightPanel) return;
@@ -710,12 +722,16 @@ function startRightPanelResize(e: MouseEvent) {
 
   const onUp = () => {
     isResizingRightPanel = false;
-    document.removeEventListener('mousemove', onMove);
-    document.removeEventListener('mouseup', onUp);
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    window.removeEventListener('mousemove', onMove, true);
+    window.removeEventListener('mouseup', onUp, true);
+    window.removeEventListener('blur', onUp);
   };
 
-  document.addEventListener('mousemove', onMove);
-  document.addEventListener('mouseup', onUp);
+  window.addEventListener('mousemove', onMove, true);
+  window.addEventListener('mouseup', onUp, true);
+  window.addEventListener('blur', onUp);
 }
 
 /**
