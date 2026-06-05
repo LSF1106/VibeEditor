@@ -635,7 +635,13 @@ async function handleDrop(e: DragEvent) {
   resetDragState();
 
   const opened = await fs.openDroppedFolder(dataTransfer);
-  if (!opened) return;
+  if (!opened) {
+    if (fs.error) {
+      // 用临时通知展示错误（如 Server 模式不支持拖放）
+      alert(fs.error);
+    }
+    return;
+  }
 
   activeActivity.value = 'explorer';
   activeActivityTitle.value = t('sidebar.explorer');

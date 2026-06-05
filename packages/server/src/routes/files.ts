@@ -26,10 +26,16 @@ function resolveRoot(root?: string): string {
 
 function getSafePath(root: string, target: string): string {
   const resolved = path.resolve(root, target);
-  if (!resolved.startsWith(root)) {
-    throw new Error('Path traversal not allowed');
+  // Use case-insensitive comparison for Windows filesystem compatibility.
+  // Include path.sep in the prefix check to prevent prefix-matching attacks
+  // (e.g. root=/home/user/proj matching resolved=/home/user/project/evil).
+  const resolvedLower = resolved.toLowerCase();
+  const rootLower = root.toLowerCase();
+  const sep = path.sep.toLowerCase();
+  if (resolvedLower === rootLower || resolvedLower.startsWith(rootLower + sep)) {
+    return resolved;
   }
-  return resolved;
+  throw new Error('Path traversal not allowed');
 }
 
 function toEntry(relativePath: string, isDirectory: boolean, size?: number, mtime?: number): FileEntry {

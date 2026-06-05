@@ -227,6 +227,7 @@ export default {
     enterFilename: '输入文件名:',
     folderName: '文件夹名称:',
     saveDocument: '无法保存文档预览',
+    dropNotSupported: 'Server 模式不支持拖放，请使用"打开文件"或"打开文件夹"。',
   },
   errors: {
     fileNotFound: '文件未找到:',

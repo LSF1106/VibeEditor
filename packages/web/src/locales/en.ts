@@ -227,6 +227,7 @@ export default {
     enterFilename: 'Enter filename:',
     folderName: 'Folder name:',
     saveDocument: 'Cannot save document previews',
+    dropNotSupported: 'Drag & drop is not supported in server mode. Use "Open File" or "Open Folder" instead.',
   },
   errors: {
     fileNotFound: 'File not found:',

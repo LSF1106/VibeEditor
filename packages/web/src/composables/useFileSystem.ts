@@ -143,6 +143,45 @@ export function useFileSystem() {
     }
   }
 
+  /**
+   * 以单个文件为虚拟工作区，直接打开该文件。
+   *
+   * 与完整工作区（Open Folder）的区别：
+   * - 不调用服务端 /api/workspace/open（不创建 .vibeeditor 目录）
+   * - 不加载文件树（工作区是虚拟的，无真实文件夹承载）
+   * - 不持久化标签页状态
+   * - workspaceId 为 null
+   *
+   * 适用于 Open File 对话框和拖拽文件两种场景。
+   */
+  async function openFileAsLightweightWorkspace(filePath: string) {
+    const client = getClient();
+    const normalizedPath = filePath.replace(/\\/g, '/');
+    const lastSlash = normalizedPath.lastIndexOf('/');
+    const parentDir = lastSlash >= 0 ? normalizedPath.substring(0, lastSlash) || '/' : '/';
+    const fileName = normalizedPath.split('/').pop() || '';
+
+    // 设置工作区根目录（仅用于路径解析，不加载目录内容）
+    if (env === 'electron' && client.openFolderPath) {
+      await client.openFolderPath(parentDir);
+    } else {
+      client.setWorkspaceRoot?.(parentDir);
+    }
+
+    // 虚拟工作区：root 指向父目录（供 handleApplyEdits 路径解析），文件树保持为空
+    store.workspaceRoots = [{
+      path: parentDir,
+      name: fileName,
+      mode: env === 'electron' ? 'local' : 'server',
+    }];
+    store.activeWorkspaceId = null;
+    store.workspaceMode = env === 'electron' ? 'local' : 'server';
+    store.fileTreeNodes = [];
+
+    // 用完整路径打开文件，确保标签页路径可被 Agent 编辑匹配
+    await openAndReadFile(normalizedPath);
+  }
+
   /** 保存当前活动标签页到文件系统 */
   async function saveCurrentFile() {
     const tab = store.activeTab;
@@ -361,7 +400,7 @@ export function useFileSystem() {
       const client = getClient();
       const result = await client.openFile();
       if (result) {
-        await openAndReadFile(result.path);
+        await openFileAsLightweightWorkspace(result.path);
         return result.path;
       }
       return null;
@@ -371,7 +410,7 @@ export function useFileSystem() {
     if (openFileDialogHandler) {
       const filePath = await openFileDialogHandler();
       if (filePath) {
-        await openAndReadFile(filePath);
+        await openFileAsLightweightWorkspace(filePath);
         return filePath;
       }
     }
@@ -411,27 +450,44 @@ export function useFileSystem() {
     }
   }
 
-  /** Electron 拖放打开文件夹 */
+  /** 拖放打开文件夹或文件（仅 Electron 模式支持） */
   async function openDroppedFolder(dataTransfer: DataTransfer | null): Promise<boolean> {
     error.value = null;
     if (!dataTransfer) return false;
 
+    // Server / Browser 模式：无法获取文件系统路径，不支持拖放
+    if (env !== 'electron') {
+      error.value = t('fs.dropNotSupported');
+      return false;
+    }
+
     try {
       const client = getClient();
 
-      if (env === 'electron' && client.openFolderPath) {
+      if (client.openFolderPath) {
         const dropped = Array.from(dataTransfer.files)
           .map(f => (f as File & { path?: string }).path)
           .filter((p): p is string => Boolean(p));
 
         for (const droppedPath of dropped) {
           try {
-            const root = await client.openFolderPath(droppedPath);
-            if (root) {
-              const rootName = root.split(/[\\/]/).pop() || root;
-              store.workspaceRoots = [{ path: root, name: rootName, mode: 'local' }];
-              store.activeWorkspaceId = null;
-              await loadDirectory('.');
+            let isDirectory = false;
+            try {
+              const entry = await client.stat(droppedPath);
+              isDirectory = entry.isDirectory;
+            } catch { /* stat 失败，假定为文件 */ }
+
+            if (isDirectory) {
+              const root = await client.openFolderPath(droppedPath);
+              if (root) {
+                const rootName = root.split(/[\\/]/).pop() || root;
+                store.workspaceRoots = [{ path: root, name: rootName, mode: 'local' }];
+                store.activeWorkspaceId = null;
+                await loadDirectory('.');
+                return true;
+              }
+            } else {
+              await openFileAsLightweightWorkspace(droppedPath);
               return true;
             }
           } catch { /* try next */ }
@@ -626,6 +682,7 @@ export function useFileSystem() {
     env,
     loadDirectory,
     openAndReadFile,
+    openFileAsLightweightWorkspace,
     saveCurrentFile,
     openFolderDialog,
     openDroppedFolder,
