@@ -10,6 +10,9 @@ import { McpManager } from './mcp/manager';
 import { createOpenAILLMProvider, buildMessages } from './openai-client';
 import { executeEdits } from './executor';
 import { parseEditsFromText, type ParsedEdit } from './parser';
+import { createLogger } from './logger';
+
+const log = createLogger('AgentRuntime');
 
 export interface AgentRuntimeConfig {
   mode: 'build' | 'plan';
@@ -35,7 +38,7 @@ export interface ChatResult {
 }
 
 export interface AgentRuntimeEvent {
-  type: 'chunk' | 'thinking' | 'tool_start' | 'tool_end' | 'done' | 'error';
+  type: 'chunk' | 'thinking' | 'tool_start' | 'tool_end' | 'tool_result' | 'done' | 'error';
   text?: string;
   toolName?: string;
   toolLabel?: string;
@@ -133,7 +136,7 @@ export class AgentRuntime {
         await this.mcpManager.connectAll(mcpConfig);
         this.mcpTools = await this.mcpManager.discoverAndCreateAdapters();
       } catch (e: any) {
-        console.error(`[AgentRuntime] MCP connection failed: ${e.message}`);
+        log.error(`MCP connection failed: ${e.message}`);
       }
     }
 
@@ -147,6 +150,13 @@ export class AgentRuntime {
       this.mcpTools = [];
     }
     this.initialized = false;
+  }
+
+  /** 重新初始化 MCP 连接（当 MCP 配置变更时使用） */
+  async reinitialize(mcpServers?: typeof this.config.mcpServers): Promise<void> {
+    await this.dispose();
+    if (mcpServers) this.config.mcpServers = mcpServers;
+    await this.initialize();
   }
 
   async chat(message: string, context: AgentContext): Promise<ChatResult> {
@@ -168,7 +178,8 @@ export class AgentRuntime {
   async chatStream(
     message: string,
     context: AgentContext,
-    onEvent?: AgentRuntimeEventCallback
+    onEvent?: AgentRuntimeEventCallback,
+    signal?: AbortSignal
   ): Promise<ChatResult> {
     await this.initialize();
 
@@ -194,6 +205,9 @@ export class AgentRuntime {
         case 'tool_end':
           emit({ type: 'tool_end', toolName: se.toolType });
           break;
+        case 'tool_result':
+          emit({ type: 'tool_result', toolName: se.toolType, text: se.data });
+          break;
         case 'done':
           break;
         case 'error':
@@ -203,7 +217,7 @@ export class AgentRuntime {
     };
 
     try {
-      const result = await session.startStream(message, context, sessionEvent);
+      const result = await session.startStream(message, context, sessionEvent, signal);
       emit({ type: 'done' });
       return this.buildResult(result.mainResult.content, result.mainResult.turns, result.mainResult.toolCalls);
     } catch (e: any) {
@@ -238,7 +252,7 @@ export class AgentRuntime {
         systemPrompt: this.agentConfig.systemPrompt || DEFAULT_SYSTEM_PROMPT,
         temperature: this.agentConfig.temperature,
         maxTokens: this.agentConfig.maxTokens,
-        maxTurns: this.config.maxTurns,
+        maxTurns: this.config.maxTurns ?? (this.config.mode === 'build' ? 20 : 10),
       },
       this.agentConfig,
       this.config.workspaceRoot,
@@ -274,7 +288,7 @@ export class AgentRuntime {
     const hasEditTag = /<edit\s/i.test(content);
     const edits = parseEditsFromText(content);
     if (hasEditTag) {
-      console.log(`[AgentRuntime] Content has <edit> tag, parsed ${edits.length} edit(s): ${edits.map(e => e.path).join(', ') || '(none)'}`);
+      log.info(`Content has <edit> tag, parsed ${edits.length} edit(s): ${edits.map(e => e.path).join(', ') || '(none)'}`);
     }
     return {
       content,

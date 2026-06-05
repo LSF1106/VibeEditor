@@ -42,3 +42,6 @@ export { LLMGateway, maskApiKey, type LLMProvider, type LLMSettings } from './ll
 // -- MCP 管理器（服务端 MCP CRUD / 测试使用） --
 export { McpManager } from './mcp/manager';
 export type { McpToolInfo } from './mcp/manager';
+
+// -- 结构化日志 --
+export { createLogger, type Logger, type LogLevel } from './logger';

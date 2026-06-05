@@ -10,7 +10,7 @@ export interface SessionResult {
 
 /** 会话事件 */
 export interface SessionEvent {
-  type: 'chunk' | 'thinking' | 'tool_start' | 'tool_end' | 'sub_agent_start' | 'sub_agent_done' | 'done' | 'error';
+  type: 'chunk' | 'thinking' | 'tool_start' | 'tool_end' | 'tool_result' | 'sub_agent_start' | 'sub_agent_done' | 'done' | 'error';
   agentId?: string;
   data?: string;
   toolType?: string;
@@ -75,7 +75,8 @@ export class Session {
   async startStream(
     message: string,
     context: AgentContext,
-    onEvent?: SessionEventCallback
+    onEvent?: SessionEventCallback,
+    signal?: AbortSignal
   ): Promise<SessionResult> {
     const emit = (e: SessionEvent) => onEvent?.(e);
 
@@ -86,7 +87,7 @@ export class Session {
       timestamp: Date.now(),
     });
 
-    const mainResult = await this.runAgentStream(this.mainAgent, message, context, emit);
+    const mainResult = await this.runAgentStream(this.mainAgent, message, context, emit, signal);
 
     this.messages.push({
       id: this.nextId(),
@@ -150,6 +151,9 @@ export class Session {
         case 'tool_end':
           emit({ type: 'tool_end', agentId: agent.definition.id, toolType: e.toolType });
           break;
+        case 'tool_result':
+          emit({ type: 'tool_result', agentId: agent.definition.id, toolType: e.toolType, data: e.text });
+          break;
       }
     });
   }
@@ -158,7 +162,8 @@ export class Session {
     agent: Agent,
     message: string,
     context: AgentContext,
-    emit: SessionEventCallback
+    emit: SessionEventCallback,
+    signal?: AbortSignal
   ): Promise<AgentResult> {
     return agent.executeStream(message, context, (e: AgentEvent) => {
       switch (e.type) {
@@ -174,8 +179,11 @@ export class Session {
         case 'tool_end':
           emit({ type: 'tool_end', agentId: agent.definition.id, toolType: e.toolType });
           break;
+        case 'tool_result':
+          emit({ type: 'tool_result', agentId: agent.definition.id, toolType: e.toolType, data: e.text });
+          break;
       }
-    });
+    }, signal);
   }
 
   /** 从主 Agent 结果中解析委托指令并启动子 Agent */

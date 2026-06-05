@@ -102,6 +102,7 @@ export function useAgent(sessionId?: string) {
   const lastEdits = ref<ParsedEdit[]>([]);
   const toolStatus = ref<string>('');
   const thinkingActive = ref(false);
+  let activeAbortController: AbortController | null = null;
 
   function buildRequestConfig(provider?: ProviderConfig | null): AgentConfig {
     return {
@@ -182,6 +183,13 @@ export function useAgent(sessionId?: string) {
 
     isProcessing.value = true;
 
+    // Cancel any previous in-flight stream
+    if (activeAbortController) {
+      activeAbortController.abort();
+    }
+    activeAbortController = new AbortController();
+    const signal = activeAbortController.signal;
+
     // 流式过程中按顺序构建 blocks
     let currentBlock: MessageBlock | null = null;
     let blockIdCounter = 0;
@@ -212,6 +220,26 @@ export function useAgent(sessionId?: string) {
       }
     }
 
+    // 内容缓冲：每 50ms 刷新一次，减少响应式更新和 markdown 渲染频率
+    const contentBuffer: string[] = [];
+    let flushTimer: ReturnType<typeof setTimeout> | null = null;
+    const FLUSH_INTERVAL = 50;
+
+    function flushContent() {
+      if (contentBuffer.length === 0) return;
+      const text = contentBuffer.join('');
+      contentBuffer.length = 0;
+      if (currentBlock) {
+        currentBlock.content += text;
+      }
+      if (onChunk) onChunk();
+    }
+
+    function scheduleFlush() {
+      if (flushTimer) return;
+      flushTimer = setTimeout(() => { flushTimer = null; flushContent(); }, FLUSH_INTERVAL);
+    }
+
     try {
       const store = useEditorStore();
       const ctx = buildAgentContext(activeFilePath);
@@ -235,20 +263,18 @@ export function useAgent(sessionId?: string) {
             thinkingActive.value = true;
             ensureBlock('thinking');
             currentBlock!.content += text;
-            // 保持向后兼容
             msg.thinking = (msg.thinking || '') + text;
           } else {
-            // content 到达意味着 thinking 结束
             if (thinkingActive.value) {
               thinkingActive.value = false;
             }
-            // 路由到正确的块：工具调用期间的内容是工具结果
-            if (currentBlock && currentBlock.type === 'tool_call' && !currentBlock.completed) {
-              currentBlock.content += text;
-            } else {
+            // Ensure we have a response block before buffering
+            if (!currentBlock || currentBlock.type !== 'response') {
               ensureBlock('response');
-              currentBlock!.content += text;
             }
+            // Buffer content and flush at controlled intervals
+            contentBuffer.push(text);
+            scheduleFlush();
             msg.content += text;
           }
           if (onChunk) onChunk();
@@ -276,12 +302,22 @@ export function useAgent(sessionId?: string) {
           } else if (event.type === 'tool_end') {
             toolStatus.value = '';
             finishBlock();
+          } else if (event.type === 'tool_result') {
+            // Append tool result content to the active tool_call block
+            const resultText = event.content || event.message || '';
+            if (currentBlock && currentBlock.type === 'tool_call') {
+              currentBlock.content += resultText;
+            } else {
+              ensureBlock('tool_call', event.message || 'tool', '');
+              currentBlock!.content = resultText;
+            }
           } else if (event.type === 'thinking_start') {
             thinkingActive.value = true;
           } else if (event.type === 'thinking_end') {
             thinkingActive.value = false;
           }
-        }
+        },
+        { signal }
       );
 
       const msg = messages.value.find(m => m.id === assistantMsgId);
@@ -292,18 +328,37 @@ export function useAgent(sessionId?: string) {
         extractEdits(msg);
       }
     } catch (e: any) {
-      const msg = messages.value.find(m => m.id === assistantMsgId);
-      if (msg) {
-        msg.role = 'system';
-        msg.content = `Error: ${e.message}`;
+      console.error('[useAgent] streamMessage error:', e.name, e.message, e);
+      if (e.name === 'AbortError') {
+        const msg = messages.value.find(m => m.id === assistantMsgId);
+        if (msg) {
+          msg.content += '\n\n*[已取消]*';
+        }
+      } else {
+        const msg = messages.value.find(m => m.id === assistantMsgId);
+        if (msg) {
+          msg.role = 'system';
+          msg.content = `Error: ${e.message}`;
+        }
       }
     } finally {
+      if (flushTimer) clearTimeout(flushTimer);
+      flushContent();
+      activeAbortController = null;
       finishBlock();
       const msg = messages.value.find(m => m.id === assistantMsgId);
       if (msg) msg.timestamp = Date.now();
       thinkingActive.value = false;
       isProcessing.value = false;
     }
+  }
+
+  function cancelStream() {
+    if (activeAbortController) {
+      activeAbortController.abort();
+      activeAbortController = null;
+    }
+    isProcessing.value = false;
   }
 
   function clearMessages() {
@@ -321,5 +376,5 @@ export function useAgent(sessionId?: string) {
     config.value.mode = mode;
   }
 
-  return { messages, isProcessing, config, lastEdits, toolStatus, thinkingActive, sendMessage, streamMessage, clearMessages, restoreMessages, setMode };
+  return { messages, isProcessing, config, lastEdits, toolStatus, thinkingActive, sendMessage, streamMessage, cancelStream, clearMessages, restoreMessages, setMode };
 }

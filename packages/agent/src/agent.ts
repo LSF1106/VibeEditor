@@ -4,10 +4,13 @@ import { ToolRegistry } from './tool-registry';
 import { createDefaultTools } from './tools/index';
 import { parseToolCalls, type ParsedTool } from './parser';
 import { createOpenAILLMProvider } from './openai-client';
+import { createLogger } from './logger';
+
+const log = createLogger('Agent');
 
 /** Agent 运行事件 */
 export interface AgentEvent {
-  type: 'chunk' | 'thinking' | 'tool_start' | 'tool_end' | 'done';
+  type: 'chunk' | 'thinking' | 'tool_start' | 'tool_end' | 'tool_result' | 'done';
   text?: string;
   toolType?: string;
   toolLabel?: string;
@@ -132,12 +135,9 @@ export class Agent {
           emit({ type: 'tool_start', toolType: tool.type, toolLabel: tool.params.path || tool.params.pattern || '' });
 
           const result = await this.executeTool(tool);
-          const toolBlock = `\n**[Tool: ${tool.type}]**\n`;
 
-          emit({ type: 'chunk', text: toolBlock });
-          fullContent += toolBlock;
-          emit({ type: 'chunk', text: result + '\n' });
-          fullContent += result + '\n';
+          emit({ type: 'tool_result', toolType: tool.type, text: result });
+          fullContent += `\n**[Tool: ${tool.type}]**\n${result}\n`;
           emit({ type: 'tool_end', toolType: tool.type });
 
           messages.push({
@@ -168,7 +168,8 @@ export class Agent {
   async executeStream(
     message: string,
     context: AgentContext,
-    onEvent?: AgentEventCallback
+    onEvent?: AgentEventCallback,
+    signal?: AbortSignal
   ): Promise<AgentResult> {
     const emit = (e: AgentEvent) => onEvent?.(e);
     const maxTurns = this.definition.maxTurns ?? DEFAULT_MAX_TURNS;
@@ -221,6 +222,10 @@ export class Agent {
     let turns = 0;
 
     for (let turn = 0; turn < maxTurns; turn++) {
+      if (signal?.aborted) {
+        emit({ type: 'done' });
+        break;
+      }
       turns = turn + 1;
 
       const response = await this.provider.chatStream(messages, (type, text) => {
@@ -246,10 +251,9 @@ export class Agent {
           emit({ type: 'tool_start', toolType: tool.type, toolLabel: tool.params.path || tool.params.pattern || '' });
 
           const result = await this.executeTool(tool);
-          const toolResult = `\n\n**[Tool: ${tool.type}]**\n${result}\n`;
 
-          emit({ type: 'chunk', text: toolResult });
-          fullContent += toolResult;
+          emit({ type: 'tool_result', toolType: tool.type, text: result });
+          fullContent += `\n\n**[Tool: ${tool.type}]**\n${result}\n`;
           emit({ type: 'tool_end', toolType: tool.type });
 
           messages.push({
@@ -264,12 +268,16 @@ export class Agent {
 
       // 对于没有工具调用的最终轮次，内容已经在流式回调中发射过了
       fullContent += response;
+      if (fullContent.length > 50000) {
+        emit({ type: 'chunk', text: '\n\n*[响应过长，已截断]*' });
+        fullContent += '\n\n*[响应过长，已截断]*';
+      }
       emit({ type: 'done' });
       break;
     }
 
     const hasEdit = /<edit\s/i.test(fullContent);
-    console.log(`[Agent] executeStream done: ${fullContent.length} chars, hasEdit=${hasEdit}, turns=${turns}`);
+    log.info(`executeStream done: ${fullContent.length} chars, hasEdit=${hasEdit}, turns=${turns}`);
     return {
       agentId: this.definition.id,
       content: fullContent,
@@ -281,17 +289,17 @@ export class Agent {
   private async executeTool(tool: ParsedTool): Promise<string> {
     const impl = this.tools.get(tool.type);
     if (!impl) {
-      console.warn(`[Agent] Unknown tool: ${tool.type}`);
+      log.warn(`Unknown tool: ${tool.type}`);
       return `Unknown tool: ${tool.type}`;
     }
     const keyParams = Object.entries(tool.params)
       .filter(([, v]) => v)
       .map(([k, v]) => `${k}=${v.length > 60 ? v.slice(0, 60) + '...' : v}`)
       .join(', ');
-    console.log(`[Agent] Tool call: ${tool.type}${keyParams ? ` (${keyParams})` : ''}`);
+    log.info(`Tool call: ${tool.type}${keyParams ? ` (${keyParams})` : ''}`);
     const startMs = Date.now();
     const result = await impl.execute(tool.params, { workspaceRoot: this.workspaceRoot });
-    console.log(`[Agent] Tool done: ${tool.type} (${Date.now() - startMs}ms, ${result.length} chars)`);
+    log.info(`Tool done: ${tool.type} (${Date.now() - startMs}ms, ${result.length} chars)`);
     return result;
   }
 }

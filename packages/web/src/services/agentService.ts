@@ -53,7 +53,8 @@ export function createAgentService(baseUrl = DEFAULT_BASE_URL) {
       context: Record<string, unknown>,
       config: AgentConfig,
       onChunk: (type: 'thinking' | 'content', text: string) => void,
-      onEvent?: (event: StreamEvent) => void
+      onEvent?: (event: StreamEvent) => void,
+      options?: { signal?: AbortSignal }
     ): Promise<AgentMessage> {
       const body: Record<string, unknown> = { message, context, config };
       if (context.workspaceRoot) {
@@ -69,11 +70,14 @@ export function createAgentService(baseUrl = DEFAULT_BASE_URL) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
+        signal: options?.signal,
       });
 
       if (!res.ok) {
         const errText = await res.text();
-        throw new Error(`${i18n.global.t('errors.apiError')} ${res.status}: ${errText}`);
+        const msg = `${i18n.global.t('errors.apiError')} ${res.status}: ${errText}`;
+        console.error('[agentService] streamMessage fetch error:', msg);
+        throw new Error(msg);
       }
 
       const reader = res.body?.getReader();

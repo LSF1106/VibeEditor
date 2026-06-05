@@ -153,6 +153,7 @@ export default {
     thinking: '思考中...',
     askAgent: '向 AI 助手提问...',
     send: '发送',
+    stop: '停止',
     providerSettings: '提供商设置',
     newSession: '新建会话',
     defaultSessionName: '新会话',

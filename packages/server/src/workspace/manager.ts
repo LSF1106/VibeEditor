@@ -87,6 +87,15 @@ export class WorkspaceManager {
     return this.workspaces.get(workspaceId)?.runtime;
   }
 
+  /** 替换 workspace 的 runtime（用于从 agent 路由缓存新创建的 runtime） */
+  cacheRuntime(workspaceId: string, runtime: AgentRuntime): void {
+    const ws = this.workspaces.get(workspaceId);
+    if (ws) {
+      try { ws.runtime.dispose(); } catch { /* ignore */ }
+      ws.runtime = runtime;
+    }
+  }
+
   getWorkspaceData(workspaceId: string): WorkspaceData | undefined {
     return this.workspaces.get(workspaceId)?.data;
   }

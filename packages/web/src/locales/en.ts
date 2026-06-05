@@ -153,6 +153,7 @@ export default {
     thinking: 'Thinking...',
     askAgent: 'Ask the agent...',
     send: 'Send',
+    stop: 'Stop',
     providerSettings: 'Provider Settings',
     newSession: 'New Session',
     defaultSessionName: 'New Session',
