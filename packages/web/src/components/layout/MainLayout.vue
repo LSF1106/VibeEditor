@@ -44,7 +44,29 @@
             :sections="sidebarSections"
           >
             <template v-slot:explorer>
+              <NewFileTree
+                v-if="useNewFileTree"
+                :nodes="store.fileTreeNodes"
+                :workspace-root="store.workspaceRoot"
+                :workspace-mode="store.workspaceMode"
+                :loading="fs.isLoading"
+                :expanded-dirs="expandedDirs"
+                :loading-dirs="loadingDirs"
+                :dir-children="dirChildren"
+                :renaming-path="renamingPath"
+                :creating-in-dir="creatingInDir"
+                :creating-node-key="creatingNodeKey"
+                :clipboard="fs.clipboard"
+                @select-file="fs.openAndReadFile"
+                @expand-dir="handleExpandDir"
+                @delete-file="fs.deleteFile"
+                @menu-action="handleNewMenuAction"
+                @confirm-rename="handleConfirmRename"
+                @confirm-create="handleConfirmCreate"
+                @cancel-create="handleCancelCreate"
+              />
               <FileTree
+                v-else
                 :nodes="store.fileTreeNodes"
                 :workspace-root="store.workspaceRoot"
                 :workspace-mode="store.workspaceMode"
@@ -81,19 +103,26 @@
       </div>
       <div v-if="!sidebarCollapsed" class="resize-handle" @mousedown="startSidebarResize"></div>
       <div class="editor-area">
-        <div class="tabs-bar">
-          <div
+        <n-tabs
+          v-model:value="activeTabValue"
+          type="card"
+          closable
+          tab-style="min-width: 80px; user-select: none;"
+          class="editor-tabs"
+          @close="handleTabClose"
+        >
+          <n-tab-pane
             v-for="tab in store.tabs"
             :key="tab.id"
-            class="tab"
-            :class="{ active: tab.id === store.activeTabId }"
-            @click="store.setActiveTab(tab.id)"
+            :name="tab.id"
+            display-directive="show"
           >
-            <span class="tab-name">{{ tab.name }}</span>
-            <span v-if="tab.isDirty" class="tab-dirty">*</span>
-            <span class="tab-close" @click.stop="store.closeTab(tab.id)">x</span>
-          </div>
-        </div>
+            <template #tab>
+              <span>{{ tab.name }}</span>
+              <span v-if="tab.isDirty" class="tab-dirty-indicator">*</span>
+            </template>
+          </n-tab-pane>
+        </n-tabs>
         <div class="editor-container">
           <ImageViewer
             v-if="store.activeTab && store.activeTab.viewMode === 'image'"
@@ -147,14 +176,18 @@
               <p class="placeholder-title">{{ $t('placeholder.title') }}</p>
               <p class="placeholder-hint">{{ $t('placeholder.hint') }}</p>
               <div v-if="store.fileTreeNodes.length === 0" class="placeholder-actions">
-                <button class="placeholder-btn" @click="handleOpenFolder">{{ $t('placeholder.openFolder') }}</button>
-                <button
+                <n-button size="medium" @click="handleOpenFolder">
+                  <template #icon><n-icon :component="FolderOpenOutline" /></template>
+                  {{ $t('placeholder.openFolder') }}
+                </n-button>
+                <n-button
                   v-if="fs.env !== 'electron'"
-                  class="placeholder-btn"
+                  size="medium"
                   @click="handleOpenFile"
                 >
+                  <template #icon><n-icon :component="DocumentOutline" /></template>
                   {{ $t('placeholder.openFile') }}
-                </button>
+                </n-button>
               </div>
             </div>
           </div>
@@ -222,6 +255,7 @@
 <script setup lang="ts">
 import { ref, reactive, watch, computed, onMounted, onUnmounted, nextTick } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { NTabs, NTabPane, NIcon, NButton } from 'naive-ui';
 import { useEditorStore } from '../../stores/editor';
 import { useFileSystem } from '../../composables/useFileSystem';
 import { getEditorInstance } from '../../services/editorInstance';
@@ -236,6 +270,8 @@ import type { ActivityItem } from './ActivityBar.vue';
 import SideBar from './SideBar.vue';
 import type { SideBarSection } from './SideBar.vue';
 import FileTree from '../file-tree/FileTree.vue';
+import { NewFileTree } from '../new-file-tree';
+import type { ContextMenuPayload } from '../new-file-tree';
 import SearchPanel from '../SearchPanel.vue';
 import MonacoEditor from '../editor/MonacoEditor.vue';
 import ImageViewer from '../editor/ImageViewer.vue';
@@ -255,7 +291,7 @@ import StatusBar from '../StatusBar.vue';
 import AboutDialog from './AboutDialog.vue';
 import OpenFolderDialog from '../dialogs/OpenFolderDialog.vue';
 import OpenFileDialog from '../dialogs/OpenFileDialog.vue';
-import { DocumentOutline, SearchOutline } from '@vicons/ionicons5'
+import { DocumentOutline, SearchOutline, FolderOpenOutline } from '@vicons/ionicons5'
 import { ChatbubblesOutline, HardwareChipOutline } from '@vicons/ionicons5'
 
 const store = useEditorStore();
@@ -276,6 +312,67 @@ const isDraggingFolder = ref(false);
 let dragDepth = 0;
 
 const { renamingPath, creatingInDir, creatingNodeKey, handleContextMenu, handleConfirmRename, handleConfirmCreate, handleCancelCreate } = useFileTreeContextMenu(fs, store, t, { clearDirState, handleExpandDir });
+
+// ===== 文件树切换 =====
+const useNewFileTree = ref(true);
+
+const activeTabValue = computed<string | undefined>({
+  get: () => store.activeTabId ?? undefined,
+  set: (val) => { if (val) store.setActiveTab(val); },
+});
+function handleTabClose(name: string) {
+  store.closeTab(name);
+}
+
+function handleNewMenuAction(action: string, payload: ContextMenuPayload) {
+  switch (action) {
+    case 'open':
+      fs.openAndReadFile(payload.path);
+      break;
+    case 'newFile':
+      creatingInDir.value = { path: payload.path || '', type: 'file' };
+      creatingNodeKey.value++;
+      break;
+    case 'newFolder':
+      creatingInDir.value = { path: payload.path || '', type: 'folder' };
+      creatingNodeKey.value++;
+      break;
+    case 'cut':
+      fs.cutItem(payload.path, payload.type === 'folder', payload.name);
+      break;
+    case 'copy':
+      fs.copyItem(payload.path, payload.type === 'folder', payload.name);
+      break;
+    case 'copyRelativePath':
+      fs.copyPathToClipboard(payload.path);
+      break;
+    case 'copyAbsolutePath': {
+      const root = store.workspaceRoot;
+      const absPath = root && (root.startsWith('/') || /^[A-Z]:[\\/]/i.test(root))
+        ? root.replace(/[\\/]?$/, '/') + payload.path
+        : payload.path;
+      fs.copyPathToClipboard(absPath);
+      break;
+    }
+    case 'paste':
+      fs.pasteItem(payload.path || '');
+      break;
+    case 'rename':
+      renamingPath.value = payload.path;
+      break;
+    case 'delete':
+      fs.deleteFile(payload.path);
+      break;
+    case 'refresh':
+      clearDirState();
+      fs.loadDirectory('.').then(() => {
+        if (store.fileTreeNodes.length > 0 && store.fileTreeNodes[0]?.isDirectory) {
+          handleExpandDir(store.fileTreeNodes[0].path);
+        }
+      });
+      break;
+  }
+}
 
 const isMaximized = ref(false);
 const { startResize, isResizing: isWindowResizing } = useWindowResize();
@@ -348,7 +445,7 @@ function onActivitySelect(id: string) {
     return;
   }
   activeActivity.value = id;
-  const allItems = activityItems.value;
+  const allItems = topActivityItems.value;
   const item = allItems.find(i => i.id === id);
   if (item) {
     activeActivityTitle.value = item.label.replace(/\s*\(.*/, '').toUpperCase();
@@ -876,42 +973,29 @@ async function handleApplyEdits(edits: ParsedEdit[]) {
   flex-direction: column;
   overflow: hidden;
 }
-.tabs-bar {
-  display: flex;
-  background: var(--bg-tertiary);
-  border-bottom: 1px solid var(--border-color);
-  overflow-x: auto;
+.editor-tabs {
   flex-shrink: 0;
-}
-.tab {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  font-size: 13px;
-  color: var(--text-secondary);
-  cursor: pointer;
-  border-right: 1px solid var(--border-color);
-  white-space: nowrap;
   user-select: none;
 }
-.tab.active {
-  background: var(--bg-primary);
-  color: var(--text-primary);
+.editor-tabs :deep(.n-tabs-pane-wrapper) {
+  display: none;
 }
-.tab:hover {
+.editor-tabs :deep(.n-tabs-nav) {
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
+}
+.editor-tabs :deep(.n-tabs-tab) {
+  background: transparent;
+  border-right: 1px solid var(--border-color);
+}
+.editor-tabs :deep(.n-tabs-tab--active) {
+  background: var(--bg-primary);
+}
+.editor-tabs :deep(.n-tabs-tab:hover) {
   background: var(--bg-hover);
 }
-.tab-dirty {
+.tab-dirty-indicator {
   color: var(--accent-color);
-}
-.tab-close {
-  font-size: 12px;
-  opacity: 0.6;
-}
-.tab-close:hover {
-  opacity: 1;
-  color: #f44747;
 }
 .editor-container {
   flex: 1;
@@ -925,6 +1009,7 @@ async function handleApplyEdits(edits: ParsedEdit[]) {
 }
 .placeholder-content {
   text-align: center;
+  user-select: none;
 }
 .placeholder-title {
   font-size: 28px;
@@ -941,19 +1026,6 @@ async function handleApplyEdits(edits: ParsedEdit[]) {
   display: flex;
   gap: 8px;
   justify-content: center;
-}
-.placeholder-btn {
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
-  color: var(--text-primary);
-  padding: 8px 16px;
-  font-size: 13px;
-  cursor: pointer;
-  border-radius: 4px;
-}
-.placeholder-btn:hover {
-  background: var(--bg-hover);
-  border-color: var(--accent-color);
 }
 .drop-overlay {
   position: fixed;

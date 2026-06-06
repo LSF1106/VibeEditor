@@ -66,8 +66,8 @@ export default {
   placeholder: {
     title: 'VibeEditor',
     hint: 'Open a folder or file to get started',
-    openFolder: '📂 Open Folder',
-    openFile: '📄 Open File',
+    openFolder: 'Open Folder',
+    openFile: 'Open File',
   },
   openDialog: {
     selectFolder: 'Select Folder',

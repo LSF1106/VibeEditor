@@ -1,32 +1,56 @@
 <template>
   <div class="agent-panel">
     <!-- 会话标签栏：仅在有工作区或有提供商时显示 -->
-    <div v-if="editorStore.activeWorkspaceId || providerSettings.providers.value.length > 0" class="session-tabs-bar">
-      <button class="session-new-btn" @click="createNewSession" :title="$t('agent.newSession')">+</button>
-      <div class="session-tabs-scroll" ref="tabsScrollRef" @wheel="onTabsWheel" @scroll="updateScrollState">
-        <div
+    <div v-if="editorStore.activeWorkspaceId || providerSettings.providers.value.length > 0">
+      <n-tabs
+        v-if="useNewSessionTabs"
+        v-model:value="activeSessionValue"
+        type="card"
+        closable
+        addable
+        tab-style="min-width: 60px; max-width: 150px; user-select: none;"
+        class="session-tabs"
+        @close="handleSessionTabClose"
+        @add="createNewSession"
+      >
+        <n-tab-pane
           v-for="s in sessionStore.sessions"
           :key="s.id"
-          class="session-tab"
-          :class="{ active: s.id === sessionStore.activeSessionId }"
-          @click="sessionStore.setActiveSession(s.id)"
+          :name="s.id"
+          display-directive="show"
         >
-          <span class="session-tab-name" :title="s.name">{{ s.name }}</span>
-          <span class="session-tab-close" @click.stop="handleCloseSession(s.id)">×</span>
+          <template #tab>
+            <span class="session-tab-name-text" :title="s.name">{{ s.name }}</span>
+          </template>
+        </n-tab-pane>
+      </n-tabs>
+      <div v-else class="session-tabs-bar">
+        <button class="session-new-btn" @click="createNewSession" :title="$t('agent.newSession')">+</button>
+        <div class="session-tabs-scroll" ref="tabsScrollRef" @wheel="onTabsWheel" @scroll="updateScrollState">
+          <div
+            v-for="s in sessionStore.sessions"
+            :key="s.id"
+            class="session-tab"
+            :class="{ active: s.id === sessionStore.activeSessionId }"
+            @click="sessionStore.setActiveSession(s.id)"
+          >
+            <span class="session-tab-name" :title="s.name">{{ s.name }}</span>
+            <span class="session-tab-close" @click.stop="handleCloseSession(s.id)">×</span>
+          </div>
         </div>
+        <template v-if="hasOverflow">
+          <button
+            class="session-scroll-btn"
+            :class="{ disabled: !canScrollLeft }"
+            @click="scrollTabs(-1)"
+          >◀</button>
+          <button
+            class="session-scroll-btn"
+            :class="{ disabled: !canScrollRight }"
+            @click="scrollTabs(1)"
+          >▶</button>
+        </template>
       </div>
-      <template v-if="hasOverflow">
-        <button
-          class="session-scroll-btn"
-          :class="{ disabled: !canScrollLeft }"
-          @click="scrollTabs(-1)"
-        >◀</button>
-        <button
-          class="session-scroll-btn"
-          :class="{ disabled: !canScrollRight }"
-          @click="scrollTabs(1)"
-        >▶</button>
-      </template>
     </div>
 
     <!-- 思考进度条 —— 处理时在面板最上方滚动 -->
@@ -36,7 +60,7 @@
 
     <!-- 无提供商时的引导页面 -->
     <div v-if="providerSettings.providers.value.length === 0" class="agent-guide">
-      <div class="guide-icon">&#9881;</div>
+      <div class="guide-icon"><n-icon size="36" :component="SettingsOutline" /></div>
       <div class="guide-title">{{ $t('agent.guideTitle') }}</div>
       <div class="guide-desc">
         {{ $t('agent.guideDesc1') }}<br />
@@ -47,14 +71,14 @@
 
     <!-- 无工作区时的提示（仅 server 模式） -->
     <div v-else-if="!editorStore.activeWorkspaceId" class="agent-guide">
-      <div class="guide-icon">📂</div>
+      <div class="guide-icon"><n-icon size="36" :component="FolderOpenOutline" /></div>
       <div class="guide-title">{{ $t('agent.noWorkspaceTitle') }}</div>
       <div class="guide-desc">{{ $t('agent.noWorkspaceDesc') }}</div>
     </div>
 
     <!-- 无活跃会话时的提示 -->
     <div v-else-if="!activeAgent" class="agent-guide">
-      <div class="guide-icon">+</div>
+      <div class="guide-icon"><n-icon size="36" :component="AddOutline" /></div>
       <div class="guide-title">{{ $t('agent.noSessionPrompt') }}</div>
       <button class="guide-cta" @click="createNewSession">{{ $t('agent.newSession') }}</button>
     </div>
@@ -231,6 +255,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, nextTick, onMounted, onUnmounted } from 'vue';
+import { NTabs, NTabPane, NIcon } from 'naive-ui';
 import { useSessionStore } from '../../stores/sessions';
 import { useLLMSettings } from '../../composables/useLLMSettings';
 import { useEditorStore } from '../../stores/editor';
@@ -241,6 +266,7 @@ import SettingsDialog from './SettingsDialog.vue';
 import ModeSelector from './ModeSelector.vue';
 import ProviderSelect from './ProviderSelect.vue';
 import { webAgentLog } from '../../services/logger';
+import { SettingsOutline, FolderOpenOutline, AddOutline } from '@vicons/ionicons5';
 
 const props = defineProps<{}>();
 
@@ -270,6 +296,16 @@ const currentMode = computed({
     }
   },
 });
+
+// ===== 会话标签栏切换 =====
+const useNewSessionTabs = ref(true);
+const activeSessionValue = computed<string | undefined>({
+  get: () => sessionStore.activeSessionId ?? undefined,
+  set: (val) => { if (val) sessionStore.setActiveSession(val); },
+});
+function handleSessionTabClose(name: string) {
+  sessionStore.closeSession(name);
+}
 
 // --- 会话标签栏滚动控制 ---
 const tabsScrollRef = ref<HTMLElement>();
@@ -472,6 +508,37 @@ onUnmounted(() => {
 }
 
 /* ===== 会话标签栏 ===== */
+.session-tabs {
+  flex-shrink: 0;
+  user-select: none;
+}
+.session-tabs :deep(.n-tabs-pane-wrapper) {
+  display: none;
+}
+.session-tabs :deep(.n-tabs-nav) {
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
+}
+.session-tabs :deep(.n-tabs-tab) {
+  background: transparent;
+  border-right: 1px solid var(--border-color);
+}
+.session-tabs :deep(.n-tabs-tab__label) {
+  overflow: hidden;
+  min-width: 0;
+}
+.session-tabs :deep(.n-tabs-tab--active) {
+  background: var(--bg-secondary);
+}
+.session-tabs :deep(.n-tabs-tab:hover) {
+  background: var(--bg-hover);
+}
+.session-tab-name-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
 .session-tabs-bar {
   display: flex;
   align-items: center;
@@ -960,6 +1027,7 @@ onUnmounted(() => {
   font-size: 13px;
   text-align: center;
   padding: 40px 0;
+  user-select: none;
 }
 
 /* ===== 用户消息 —— 右对齐，不在时间轴上 ===== */
@@ -1082,6 +1150,7 @@ onUnmounted(() => {
   justify-content: center;
   text-align: center;
   padding: 32px 24px;
+  user-select: none;
 }
 .guide-icon {
   font-size: 40px;

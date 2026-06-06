@@ -66,8 +66,8 @@ export default {
   placeholder: {
     title: 'VibeEditor',
     hint: '打开文件夹或文件以开始编辑',
-    openFolder: '📂 打开文件夹',
-    openFile: '📄 打开文件',
+    openFolder: '打开文件夹',
+    openFile: '打开文件',
   },
   openDialog: {
     selectFolder: '选择文件夹',
