@@ -2,11 +2,13 @@ import { app, BrowserWindow, ipcMain, dialog, Menu, protocol } from 'electron';
 import { readFileSync } from 'fs';
 import { readFile } from 'fs/promises';
 import * as path from 'path';
-import { registerFileHandlers } from './ipc/file-handler';
+import { registerFileHandlers, clearWindowRoot } from './ipc/file-handler';
 
 const appInfo = JSON.parse(readFileSync(path.join(__dirname, '../../../app-info.json'), 'utf-8'));
 
 let mainWindow: BrowserWindow | null = null;
+const openWindows = new Map<number, { window: BrowserWindow; workspacePath: string }>();
+
 
 const WEB_DIST_DIR = path.join(__dirname, '../web/dist');
 
@@ -74,8 +76,9 @@ function registerVibeProtocol() {
 }
 
 function sendMenuAction(action: string) {
-  if (mainWindow) {
-    mainWindow.webContents.send('menu:action', action);
+  const win = BrowserWindow.getFocusedWindow();
+  if (win) {
+    win.webContents.send('menu:action', action);
   }
 }
 
@@ -104,7 +107,7 @@ function buildMenu(): Electron.MenuItemConstructorOptions[] {
         },
         {
           label: 'Open File',
-          click: () => sendMenuAction('open-local-file'),
+          click: () => sendMenuAction('open-file'),
         },
         { type: 'separator' },
         {
@@ -177,8 +180,29 @@ function buildMenu(): Electron.MenuItemConstructorOptions[] {
   ];
 }
 
-function createWindow() {
-  mainWindow = new BrowserWindow({
+function getLoadURL(workspacePath?: string): string {
+  let baseURL: string;
+  if (process.env.VITE_DEV_SERVER_URL) {
+    baseURL = process.env.VITE_DEV_SERVER_URL;
+  } else if (!app.isPackaged) {
+    baseURL = 'http://localhost:5173';
+  } else {
+    baseURL = 'vibe://app/index.html';
+  }
+  if (workspacePath) {
+    return `${baseURL}?workspace=${encodeURIComponent(workspacePath)}`;
+  }
+  return baseURL;
+}
+
+function toggleDevTools(win: BrowserWindow) {
+  if (process.env.VITE_DEV_SERVER_URL || !app.isPackaged) {
+    win.webContents.openDevTools();
+  }
+}
+
+function createWindow(workspacePath?: string) {
+  const win = new BrowserWindow({
     width: 1400,
     height: 900,
     minWidth: 800,
@@ -195,22 +219,26 @@ function createWindow() {
     },
   });
 
-  if (process.env.VITE_DEV_SERVER_URL) {
-    mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
-    mainWindow.webContents.openDevTools();
-  } else if (!app.isPackaged) {
-    mainWindow.loadURL('http://localhost:5173');
-    mainWindow.webContents.openDevTools();
-  } else {
-    mainWindow.loadURL('vibe://app/index.html');
+  win.loadURL(getLoadURL(workspacePath));
+  toggleDevTools(win);
+
+  win.on('maximize', () => win.webContents.send('window:maximizeChange', true));
+  win.on('unmaximize', () => win.webContents.send('window:maximizeChange', false));
+
+  win.on('closed', () => {
+    const id = win.webContents.id;
+    openWindows.delete(id);
+    clearWindowRoot(id);
+    if (mainWindow === win) {
+      mainWindow = null;
+    }
+  });
+
+  if (workspacePath) {
+    openWindows.set(win.webContents.id, { window: win, workspacePath });
   }
 
-  mainWindow.on('maximize', () => mainWindow?.webContents.send('window:maximizeChange', true));
-  mainWindow.on('unmaximize', () => mainWindow?.webContents.send('window:maximizeChange', false));
-
-  mainWindow.on('closed', () => {
-    mainWindow = null;
-  });
+  return win;
 }
 
 app.whenReady().then(() => {
@@ -220,34 +248,64 @@ app.whenReady().then(() => {
   ipcMain.handle('app:getInfo', () => appInfo);
 
   const menu = Menu.buildFromTemplate(buildMenu());
-  if (process.platform === 'darwin') {
-    Menu.setApplicationMenu(menu);
-  }
+  Menu.setApplicationMenu(menu);
 
-  ipcMain.handle('window:minimize', () => mainWindow?.minimize());
-  ipcMain.handle('window:maximize', () => mainWindow?.maximize());
-  ipcMain.handle('window:unmaximize', () => mainWindow?.unmaximize());
-  ipcMain.handle('window:close', () => mainWindow?.close());
-  ipcMain.handle('window:isMaximized', () => mainWindow?.isMaximized() ?? false);
-  ipcMain.handle('window:getBounds', () => {
-    if (!mainWindow) return null;
-    const bounds = mainWindow.getBounds();
+  ipcMain.handle('window:minimize', (event) => BrowserWindow.fromWebContents(event.sender)?.minimize());
+  ipcMain.handle('window:maximize', (event) => BrowserWindow.fromWebContents(event.sender)?.maximize());
+  ipcMain.handle('window:unmaximize', (event) => BrowserWindow.fromWebContents(event.sender)?.unmaximize());
+  ipcMain.handle('window:close', (event) => BrowserWindow.fromWebContents(event.sender)?.close());
+  ipcMain.handle('window:isMaximized', (event) => BrowserWindow.fromWebContents(event.sender)?.isMaximized() ?? false);
+  ipcMain.handle('window:getBounds', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return null;
+    const bounds = win.getBounds();
     return { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height };
   });
-  ipcMain.handle('window:resize', (_event, x: number, y: number, w: number, h: number) => {
-    if (!mainWindow) return;
+  ipcMain.handle('window:resize', (event, x: number, y: number, w: number, h: number) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return;
     const minW = 800;
     const minH = 600;
     const newW = Math.max(minW, w);
     const newH = Math.max(minH, h);
-    mainWindow.setBounds({ x, y, width: newW, height: newH });
+    win.setBounds({ x, y, width: newW, height: newH });
   });
 
-  createWindow();
+  ipcMain.handle('window:create', async (_event, workspacePath: string) => {
+    const normalizedPath = workspacePath.replace(/\\/g, '/').toLowerCase();
+    for (const [id, entry] of openWindows) {
+      if (entry.workspacePath.replace(/\\/g, '/').toLowerCase() === normalizedPath) {
+        const win = BrowserWindow.fromWebContents({ id } as Electron.WebContents);
+        if (win) {
+          if (win.isMinimized()) win.restore();
+          win.focus();
+        }
+        return { status: 'duplicate' };
+      }
+    }
+    const win = createWindow(workspacePath);
+    return { status: 'created' };
+  });
+
+  ipcMain.handle('window:showNotification', (_event, title: string, body: string) => {
+    const win = BrowserWindow.fromWebContents(_event.sender);
+    if (win) {
+      dialog.showMessageBox(win, { type: 'info', title, message: body });
+    }
+  });
+
+  ipcMain.handle('window:registerWorkspace', (event, workspacePath: string) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (win) {
+      openWindows.set(event.sender.id, { window: win, workspacePath });
+    }
+  });
+
+  mainWindow = createWindow();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
+      mainWindow = createWindow();
     }
   });
 });

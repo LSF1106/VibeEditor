@@ -31,4 +31,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onMaximizeChange: (callback: (isMaximized: boolean) => void) => {
     ipcRenderer.on('window:maximizeChange', (_event, isMaximized: boolean) => callback(isMaximized));
   },
+  createWindow: (workspacePath: string) => ipcRenderer.invoke('window:create', workspacePath),
+  showNotification: (title: string, body: string) => ipcRenderer.invoke('window:showNotification', title, body),
+  registerWorkspace: (workspacePath: string) => ipcRenderer.invoke('window:registerWorkspace', workspacePath),
 });

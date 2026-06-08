@@ -181,7 +181,6 @@
                   {{ $t('placeholder.openFolder') }}
                 </n-button>
                 <n-button
-                  v-if="fs.env !== 'electron'"
                   size="medium"
                   @click="handleOpenFile"
                 >
@@ -422,6 +421,18 @@ function initRightPanelWidth() {
 onMounted(() => {
   nextTick(() => initRightPanelWidth());
   window.addEventListener('resize', onWindowResize);
+
+  if (bcChannel) {
+    bcChannel.addEventListener('message', (event) => {
+      const msg = event.data;
+      if (msg?.type === 'CHECK' && msg.path) {
+        if (currentWorkspacePaths.value.includes(msg.path)) {
+          bcChannel.postMessage({ type: 'OPEN', path: msg.path });
+        }
+      }
+    });
+    updateWorkspacePaths();
+  }
 });
 
 function onWindowResize() {
@@ -486,6 +497,43 @@ const showOpenFolderDialog = ref(false);
 const showOpenFileDialog = ref(false);
 let openFolderResolver: ((value: string | null) => void) | null = null;
 let openFileResolver: ((value: string | null) => void) | null = null;
+
+// ===== 跨标签页工作区去重 (BroadcastChannel) =====
+const bcChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('vibeeditor-workspace-sync') : null;
+const currentWorkspacePaths = ref<string[]>([]);
+let bcResponseTimer: ReturnType<typeof setTimeout> | null = null;
+
+function normalizePathForDedup(p: string): string {
+  return p.replace(/\\/g, '/').replace(/\/$/, '').toLowerCase();
+}
+
+function updateWorkspacePaths() {
+  currentWorkspacePaths.value = store.workspaceRoots.map(r => normalizePathForDedup(r.path));
+  if (bcChannel) {
+    bcChannel.postMessage({ type: 'UPDATE', paths: currentWorkspacePaths.value });
+  }
+}
+
+async function checkWorkspaceDuplicate(path: string): Promise<boolean> {
+  if (!bcChannel) return false;
+  const normalized = normalizePathForDedup(path);
+  if (currentWorkspacePaths.value.includes(normalized)) return true;
+  return new Promise((resolve) => {
+    let resolved = false;
+    const handler = (event: MessageEvent) => {
+      if (event.data?.type === 'OPEN' && event.data.path === normalized) {
+        resolved = true;
+        resolve(true);
+      }
+    };
+    bcChannel.addEventListener('message', handler);
+    bcChannel.postMessage({ type: 'CHECK', path: normalized });
+    bcResponseTimer = setTimeout(() => {
+      bcChannel.removeEventListener('message', handler);
+      if (!resolved) resolve(false);
+    }, 300);
+  });
+}
 
 // ===== Agent 编辑快照（用于撤销） =====
 const editSnapshots = ref<Map<string, string>>(new Map());
@@ -654,6 +702,11 @@ watch(
   { deep: true }
 );
 
+// 工作区根变化时更新跨标签页去重状态
+watch(() => store.workspaceRoots, () => {
+  updateWorkspacePaths();
+}, { deep: true });
+
 /**
  * 文件保存后的回调：刷新所有已展开目录的内容
  *
@@ -696,16 +749,75 @@ function clearDirState() {
   dirChildren.value = {};
 }
 
+/** 判断当前是否已有有效工作区（文件树已加载） */
+function hasExistingWorkspace(): boolean {
+  return store.workspaceRoots.length > 0 && store.fileTreeNodes.length > 0;
+}
+
+/** 在新上下文（新 tab / 新窗口）中打开文件夹 */
+async function openFolderInNewContext() {
+  const path = await fs.resolveFolderPath();
+  if (!path) return;
+
+  if (fs.env === 'electron') {
+    if (window.electronAPI?.createWindow) {
+      const result = await window.electronAPI.createWindow(path);
+      if (result?.status === 'duplicate') {
+        if (window.electronAPI.showNotification) {
+          window.electronAPI.showNotification('Workspace Already Open', `"${path}" is already open in another window.`);
+        }
+      }
+    }
+  } else {
+    if (await checkWorkspaceDuplicate(path)) {
+      alert(`Workspace "${path}" is already open in another tab.`);
+      return;
+    }
+    window.open(window.location.origin + '?workspace=' + encodeURIComponent(path), '_blank');
+  }
+}
+
+/** 在新上下文（新 tab / 新窗口）中打开文件 */
+async function openFileInNewContext() {
+  const path = await fs.resolveFilePath();
+  if (!path) return;
+
+  if (fs.env === 'electron') {
+    if (window.electronAPI?.createWindow) {
+      const result = await window.electronAPI.createWindow(path);
+      if (result?.status === 'duplicate') {
+        if (window.electronAPI.showNotification) {
+          window.electronAPI.showNotification('Workspace Already Open', `"${path}" is already open in another window.`);
+        }
+      }
+    }
+  } else {
+    if (await checkWorkspaceDuplicate(path)) {
+      alert(`Workspace "${path}" is already open in another tab.`);
+      return;
+    }
+    window.open(window.location.origin + '?workspace=' + encodeURIComponent(path), '_blank');
+  }
+}
+
 /** 打开文件夹并重置文件树状态 */
 async function handleOpenFolder() {
   clearDirState();
-  await fs.openFolderDialog();
+  if (hasExistingWorkspace()) {
+    await openFolderInNewContext();
+  } else {
+    await fs.openFolderDialog();
+  }
 }
 
 /** 连接到服务端并重置文件树状态 */
 async function handleOpenFile() {
   clearDirState();
-  await fs.openFileDialog();
+  if (hasExistingWorkspace()) {
+    await openFileInNewContext();
+  } else {
+    await fs.openFileDialog();
+  }
 }
 
 function isFileDrag(dataTransfer: DataTransfer | null): boolean {
@@ -804,6 +916,7 @@ onMounted(async () => {
           handleOpenFolder();
           break;
         case 'open-file':
+        case 'open-local-file':
           handleOpenFile();
           break;
         case 'save':
@@ -820,6 +933,20 @@ onMounted(async () => {
           break;
       }
     });
+  }
+
+  // URL parameter workspace loading (new tab / new window)
+  const urlParams = new URLSearchParams(window.location.search);
+  const workspaceParam = urlParams.get('workspace');
+  if (workspaceParam) {
+    const decodedPath = decodeURIComponent(workspaceParam);
+    clearDirState();
+    try {
+      await fs.openWorkspaceViaPath(decodedPath);
+      updateWorkspacePaths();
+    } catch (e: any) {
+      fs.error = `Failed to open workspace: ${e instanceof Error ? e.message : String(e)}`;
+    }
   }
 });
 

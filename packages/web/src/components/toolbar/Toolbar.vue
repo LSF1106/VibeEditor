@@ -96,9 +96,7 @@ const fileOptions = computed(() => [
   { label: t('toolbar.newFolder'), key: 'new-folder' },
   { type: 'divider' as const },
   { label: t('toolbar.openFolder'), key: 'open-folder' },
-  ...(props.env !== 'electron'
-    ? [{ label: t('toolbar.openFile'), key: 'open-file' }]
-    : []),
+  { label: t('toolbar.openFile'), key: 'open-file' },
   { type: 'divider' as const },
   { label: t('toolbar.save'), key: 'save' },
 ])

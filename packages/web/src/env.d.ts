@@ -41,6 +41,9 @@ interface Window {
     getBounds: () => Promise<{ x: number; y: number; width: number; height: number } | null>;
     resizeWindow: (x: number, y: number, w: number, h: number) => Promise<void>;
     onMaximizeChange: (callback: (isMaximized: boolean) => void) => void;
+    createWindow: (workspacePath: string) => Promise<{ status: 'created' } | { status: 'duplicate' }>;
+    showNotification: (title: string, body: string) => Promise<void>;
+    registerWorkspace: (workspacePath: string) => Promise<void>;
   };
   /** Electron 主进程注入的服务器端口号 */
   __VIBE_SERVER_PORT__?: number;

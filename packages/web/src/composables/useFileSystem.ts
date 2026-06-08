@@ -185,6 +185,8 @@ export function useFileSystem() {
 
     // 用完整路径打开文件，确保标签页路径可被 Agent 编辑匹配
     await openAndReadFile(normalizedPath);
+
+    window.electronAPI?.registerWorkspace?.(parentDir);
   }
 
   /** 保存当前活动标签页到文件系统 */
@@ -374,6 +376,50 @@ export function useFileSystem() {
     }
   }
 
+  /** 仅获取文件夹路径（通过对话框选择），不打开工作区 */
+  async function resolveFolderPath(): Promise<string | null> {
+    if (env === 'electron') {
+      const client = getClient();
+      return await client.openFolder();
+    }
+    if (openFolderDialogHandler) {
+      return await openFolderDialogHandler();
+    }
+    return null;
+  }
+
+  /** 仅获取文件路径（通过对话框选择），不打开工作区 */
+  async function resolveFilePath(): Promise<string | null> {
+    if (env === 'electron') {
+      const client = getClient();
+      const result = await client.openFile();
+      return result?.path ?? null;
+    }
+    if (openFileDialogHandler) {
+      return await openFileDialogHandler();
+    }
+    return null;
+  }
+
+  /** 通过已确定的路径打开工作区（不弹出对话框） */
+  async function openWorkspaceViaPath(folderPath: string): Promise<void> {
+    if (env === 'electron') {
+      const client = getClient();
+      const root = await client.openFolderPath?.(folderPath);
+      if (root) {
+        const rootName = root.split(/[\\/]/).pop() || root;
+        store.workspaceRoots = [{ path: root, name: rootName, mode: 'local' }];
+        store.activeWorkspaceId = null;
+        const sessionStore = useSessionStore();
+        await sessionStore.bindWorkspace(null);
+        await loadDirectory('.');
+        window.electronAPI?.registerWorkspace?.(root);
+      }
+      return;
+    }
+    await openWorkspaceAtPath(folderPath);
+  }
+
   /** 根据当前环境选择合适的"打开文件夹"方式 */
   async function openFolderDialog(): Promise<string | null> {
     if (env === 'electron') {
@@ -387,6 +433,7 @@ export function useFileSystem() {
         const sessionStore = useSessionStore();
         await sessionStore.bindWorkspace(null);
         await loadDirectory('.');
+        window.electronAPI?.registerWorkspace?.(root);
       }
       return root;
     }
@@ -700,6 +747,9 @@ export function useFileSystem() {
     openDroppedFolder,
     openFileDialog,
     openWorkspaceAtPath,
+    openWorkspaceViaPath,
+    resolveFolderPath,
+    resolveFilePath,
     persistWorkspaceState,
     deleteFile,
     undoDelete,
