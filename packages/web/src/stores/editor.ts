@@ -102,6 +102,10 @@ export const useEditorStore = defineStore('editor', () => {
   const workspaceRoots = ref<WorkspaceRoot[]>([]);
   const workspaceMode = ref<WorkspaceMode>('server');
   const activeWorkspaceId = ref<string | null>(null);
+  const isSingleFile = ref(false);
+
+  function enterSingleFileMode() { isSingleFile.value = true; }
+  function exitSingleFileMode() { isSingleFile.value = false; }
 
   /** 当前活动标签页（计算属性） */
   const activeTab = computed(() => tabs.value.find(t => t.id === activeTabId.value) ?? null);
@@ -217,8 +221,9 @@ export const useEditorStore = defineStore('editor', () => {
 
   return {
     tabs, activeTabId, activeTab, fileTreeNodes, workspaceRoot, workspaceRoots, workspaceMode,
-    activeWorkspaceId,
+    activeWorkspaceId, isSingleFile,
     addWorkspaceRoot,
     openFile, newUntitled, closeTab, updateContent, saveTab, setActiveTab, setTabPath, setActiveTabByName,
+    enterSingleFileMode, exitSingleFileMode,
   };
 });

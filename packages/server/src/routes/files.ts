@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import type { FileEntry } from '@vibeeditor/core';
+import type { FileEntry } from '../fs/types';
 import { createLogger, LOG_CATEGORY } from '@vibeeditor/agent';
 
 const log = createLogger(LOG_CATEGORY.FILE_OPS);

@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
-import type { FileEntry } from '@vibeeditor/core';
+import type { FileEntry } from '../fs/types';
 import { WorkspaceManager } from '../workspace/manager';
 import type { LLMGateway } from '@vibeeditor/agent';
 import { createLogger, LOG_CATEGORY } from '@vibeeditor/agent';
@@ -94,14 +94,14 @@ export function createWorkspaceRouter(manager: WorkspaceManager, llmGateway: LLM
 
   router.post('/open', async (req: Request, res: Response) => {
     try {
-      const { rootPath } = req.body;
+      const { rootPath, lightweight } = req.body;
       if (!rootPath) {
         res.status(400).json({ error: 'rootPath is required' });
         return;
       }
 
-      log.info(`Opening workspace: rootPath="${rootPath}"`);
-      const data = await manager.openWorkspace(rootPath, llmGateway);
+      log.info(`Opening workspace: rootPath="${rootPath}", lightweight=${!!lightweight}`);
+      const data = await manager.openWorkspace(rootPath, llmGateway, !!lightweight);
       res.json(data);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

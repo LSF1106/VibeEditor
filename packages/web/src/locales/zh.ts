@@ -89,6 +89,15 @@ export default {
     invalidFolderName: '文件夹名称包含非法字符',
     emptyFolderName: '文件夹名称不能为空',
   },
+  workspaceDialog: {
+    title: '打开工作区',
+    pathLabel: '路径',
+    newWindow: '在新窗口打开',
+    newTab: '在新标签页打开',
+    currentWindow: '在当前窗口打开',
+    currentTab: '在当前标签页打开',
+    cancel: '取消',
+  },
   dragOverlay: {
     title: '拖放文件夹以打开',
     subtitle: '在 VibeEditor 任意位置释放',
@@ -230,6 +239,7 @@ export default {
     folderName: '文件夹名称:',
     saveDocument: '无法保存文档预览',
     dropNotSupported: 'Server 模式不支持拖放，请使用"打开文件"或"打开文件夹"。',
+    singleFileWorkspaceFailed: '创建单文件工作区失败',
   },
   errors: {
     fileNotFound: '文件未找到:',

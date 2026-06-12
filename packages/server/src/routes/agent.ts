@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { AgentRuntime, type AgentRuntimeConfig, type AgentRuntimeEvent, type AgentContext, type AgentEditResult } from '@vibeeditor/agent';
-import { LocalFileSystem } from '@vibeeditor/core';
+import { LocalFileSystem } from '../fs/local';
 import { executeEdits } from '@vibeeditor/agent';
 import { createLogger } from '@vibeeditor/agent';
 import { loadEnabledMcpServers } from './mcp';

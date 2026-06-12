@@ -82,42 +82,14 @@ function removeMessages(sessionId: string) {
  * 每个会话对应一个独立的 useAgent() 实例。
  */
 export const useSessionStore = defineStore('sessions', () => {
-  // --- 从 localStorage 恢复（作为初始缓存，可能被 bindWorkspace 覆盖） ---
-  const stored = loadSessions();
-  if (stored.length > 0) {
-    sessionCounter = stored.reduce((max, s) => {
-      const num = parseInt(s.id.replace('session_', ''), 10);
-      return Number.isFinite(num) && num > max ? num : max;
-    }, 0);
-  }
+  const sessions = ref<AgentSession[]>([]);
 
-  const sessions = ref<AgentSession[]>(stored);
-
-  // --- 非响应式 Map：会话 ID → useAgent 实例 ---
   const agents = new Map<string, ReturnType<typeof useAgent>>();
 
-  // --- 响应式状态 ---
   const activeSessionId = ref<string | null>(null);
   const boundWorkspaceId = ref<string | null>(null);
 
-  // --- 服务端写入串行队列（避免并发写覆盖） ---
   let writeQueue: Promise<void> = Promise.resolve();
-
-  // --- 为从 localStorage 恢复的会话创建 useAgent 实例 ---
-  for (const s of sessions.value) {
-    const agent = useAgent(s.id);
-    agents.set(s.id, agent);
-    const msgs = loadMessages(s.id);
-    if (msgs.length > 0) {
-      agent.restoreMessages(msgs);
-    }
-  }
-  if (sessions.value.length > 0) {
-    activeSessionId.value = sessions.value[0].id;
-  }
-
-  // --- 不再自动创建默认会话：等待 bindWorkspace 触发 ---
-  // 如果初始时无工作区，agent panel 将显示"请先打开文件夹"引导
 
   // --- Computed ---
   const activeSession = computed<AgentSession | null>(

@@ -1,31 +1,44 @@
-import { IpcMain, Dialog } from 'electron';
+import { IpcMain, Dialog, BrowserWindow } from 'electron';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { createLogger, LOG_CATEGORY } from '@vibeeditor/agent';
 
 const log = createLogger(LOG_CATEGORY.FILE_OPS);
 
-let currentRoot = process.cwd();
+const windowRoots = new Map<number, string>();
+
+function getSenderRoot(event: Electron.IpcMainInvokeEvent): string | null {
+  return windowRoots.get(event.sender.id) || null;
+}
+
+export function getOpenWorkspacePaths(): string[] {
+  return Array.from(windowRoots.values());
+}
+
+export function clearWindowRoot(webContentsId: number) {
+  windowRoots.delete(webContentsId);
+}
 
 export function registerFileHandlers(ipcMain: IpcMain, dialog: Dialog) {
-  function resolvePath(target: string): string {
+  function resolvePath(event: Electron.IpcMainInvokeEvent, target: string): string {
     if (path.isAbsolute(target)) return target;
-    return path.resolve(currentRoot, target);
+    const root = getSenderRoot(event) || process.cwd();
+    return path.resolve(root, target);
   }
 
-  // Reuse this path-based opener for both the native dialog and drag/drop.
-  async function openFolderAtPath(folderPath: string): Promise<string> {
+  async function openFolderAtPath(event: Electron.IpcMainInvokeEvent, folderPath: string): Promise<string> {
     const nextRoot = path.resolve(folderPath);
     const stat = await fs.stat(nextRoot);
     if (!stat.isDirectory()) {
       throw new Error('Dropped item is not a folder');
     }
-    currentRoot = nextRoot;
-    return currentRoot;
+    windowRoots.set(event.sender.id, nextRoot);
+    return nextRoot;
   }
 
-  function toEntry(entryPath: string, name: string, isDir: boolean, stat?: { size: number; mtimeMs: number }): any {
-    const relPath = path.relative(currentRoot, entryPath).replace(/\\/g, '/');
+  function toEntry(event: Electron.IpcMainInvokeEvent, entryPath: string, name: string, isDir: boolean, stat?: { size: number; mtimeMs: number }): any {
+    const root = getSenderRoot(event) || process.cwd();
+    const relPath = path.relative(root, entryPath).replace(/\\/g, '/');
     return {
       name,
       path: relPath,
@@ -35,42 +48,42 @@ export function registerFileHandlers(ipcMain: IpcMain, dialog: Dialog) {
     };
   }
 
-  ipcMain.handle('file:read', async (_e, filePath: string) => {
-    const p = resolvePath(filePath);
+  ipcMain.handle('file:read', async (event, filePath: string) => {
+    const p = resolvePath(event, filePath);
     return fs.readFile(p, 'utf-8');
   });
 
-  ipcMain.handle('file:readBuffer', async (_e, filePath: string) => {
-    const p = resolvePath(filePath);
+  ipcMain.handle('file:readBuffer', async (event, filePath: string) => {
+    const p = resolvePath(event, filePath);
     const buffer = await fs.readFile(p);
     return buffer.toString('base64');
   });
 
-  ipcMain.handle('file:write', async (_e, filePath: string, content: string) => {
+  ipcMain.handle('file:write', async (event, filePath: string, content: string) => {
     const startMs = Date.now();
-    const p = resolvePath(filePath);
+    const p = resolvePath(event, filePath);
     await fs.mkdir(path.dirname(p), { recursive: true });
     await fs.writeFile(p, content, 'utf-8');
     log.info(`write done: ${content.length} chars, ${Date.now() - startMs}ms (IPC)`, { path: filePath, size: content.length });
   });
 
-  ipcMain.handle('file:delete', async (_e, filePath: string) => {
-    const p = resolvePath(filePath);
+  ipcMain.handle('file:delete', async (event, filePath: string) => {
+    const p = resolvePath(event, filePath);
     await fs.unlink(p);
     log.info(`delete done (IPC)`, { path: filePath });
   });
 
-  ipcMain.handle('file:readDir', async (_e, dirPath: string) => {
-    const p = resolvePath(dirPath);
+  ipcMain.handle('file:readDir', async (event, dirPath: string) => {
+    const p = resolvePath(event, dirPath);
     const entries = await fs.readdir(p, { withFileTypes: true });
     const result: any[] = [];
     for (const entry of entries) {
       const entryPath = path.join(p, entry.name);
       try {
         const stat = await fs.stat(entryPath);
-        result.push(toEntry(entryPath, entry.name, entry.isDirectory(), stat));
+        result.push(toEntry(event, entryPath, entry.name, entry.isDirectory(), stat));
       } catch {
-        result.push(toEntry(entryPath, entry.name, entry.isDirectory()));
+        result.push(toEntry(event, entryPath, entry.name, entry.isDirectory()));
       }
     }
     result.sort((a: any, b: any) => {
@@ -80,20 +93,20 @@ export function registerFileHandlers(ipcMain: IpcMain, dialog: Dialog) {
     return result;
   });
 
-  ipcMain.handle('file:createDir', async (_e, dirPath: string) => {
-    const p = resolvePath(dirPath);
+  ipcMain.handle('file:createDir', async (event, dirPath: string) => {
+    const p = resolvePath(event, dirPath);
     await fs.mkdir(p, { recursive: true });
     log.info(`mkdir done (IPC)`, { path: dirPath });
   });
 
-  ipcMain.handle('file:deleteDir', async (_e, dirPath: string, recursive = true) => {
-    const p = resolvePath(dirPath);
+  ipcMain.handle('file:deleteDir', async (event, dirPath: string, recursive = true) => {
+    const p = resolvePath(event, dirPath);
     await fs.rm(p, { recursive, force: true });
     log.info(`rmdir done (IPC)`, { path: dirPath, recursive });
   });
 
-  ipcMain.handle('file:exists', async (_e, filePath: string) => {
-    const p = resolvePath(filePath);
+  ipcMain.handle('file:exists', async (event, filePath: string) => {
+    const p = resolvePath(event, filePath);
     try {
       await fs.access(p);
       return true;
@@ -102,36 +115,37 @@ export function registerFileHandlers(ipcMain: IpcMain, dialog: Dialog) {
     }
   });
 
-  ipcMain.handle('file:stat', async (_e, filePath: string) => {
-    const p = resolvePath(filePath);
+  ipcMain.handle('file:stat', async (event, filePath: string) => {
+    const p = resolvePath(event, filePath);
     const stat = await fs.stat(p);
-    return toEntry(p, path.basename(p), stat.isDirectory(), stat);
+    return toEntry(event, p, path.basename(p), stat.isDirectory(), stat);
   });
 
-  ipcMain.handle('file:rename', async (_e, oldPath: string, newPath: string) => {
+  ipcMain.handle('file:rename', async (event, oldPath: string, newPath: string) => {
     const startMs = Date.now();
-    const src = resolvePath(oldPath);
-    const dest = resolvePath(newPath);
+    const src = resolvePath(event, oldPath);
+    const dest = resolvePath(event, newPath);
     await fs.mkdir(path.dirname(dest), { recursive: true });
     await fs.rename(src, dest);
     log.info(`rename done: ${Date.now() - startMs}ms (IPC)`, { oldPath, newPath });
   });
 
-  ipcMain.handle('dialog:openFolder', async () => {
-    const result = await dialog.showOpenDialog({
+  ipcMain.handle('dialog:openFolder', async (event) => {
+    const senderWindow = BrowserWindow.fromWebContents(event.sender);
+    const result = await dialog.showOpenDialog(senderWindow!, {
       properties: ['openDirectory'],
     });
     if (result.canceled || result.filePaths.length === 0) return null;
-    return openFolderAtPath(result.filePaths[0]);
+    return openFolderAtPath(event, result.filePaths[0]);
   });
 
-  // Dragged folders arrive from the renderer as real filesystem paths.
-  ipcMain.handle('file:openFolderPath', async (_e, folderPath: string) => {
-    return openFolderAtPath(folderPath);
+  ipcMain.handle('file:openFolderPath', async (event, folderPath: string) => {
+    return openFolderAtPath(event, folderPath);
   });
 
-  ipcMain.handle('dialog:openFile', async () => {
-    const result = await dialog.showOpenDialog({
+  ipcMain.handle('dialog:openFile', async (event) => {
+    const senderWindow = BrowserWindow.fromWebContents(event.sender);
+    const result = await dialog.showOpenDialog(senderWindow!, {
       properties: ['openFile'],
       filters: [{ name: 'All Files', extensions: ['*'] }],
     });
@@ -139,8 +153,9 @@ export function registerFileHandlers(ipcMain: IpcMain, dialog: Dialog) {
     return { path: result.filePaths[0] };
   });
 
-  ipcMain.handle('dialog:saveFile', async (_e, filePath: string, content: string) => {
-    const result = await dialog.showSaveDialog({
+  ipcMain.handle('dialog:saveFile', async (event, filePath: string, content: string) => {
+    const senderWindow = BrowserWindow.fromWebContents(event.sender);
+    const result = await dialog.showSaveDialog(senderWindow!, {
       defaultPath: filePath,
     });
     if (result.canceled || !result.filePath) return null;

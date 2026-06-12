@@ -10,6 +10,7 @@
     <Toolbar
       :env="fs.env"
       :workspace-mode="store.workspaceMode"
+      :is-single-file="store.isSingleFile"
       @open-folder="handleOpenFolder"
       @open-file="handleOpenFile"
       @save="fs.saveCurrentFile"
@@ -28,6 +29,7 @@
     />
     <div ref="mainContentRef" class="main-content">
       <ActivityBar
+        v-if="!store.isSingleFile"
         :items="topActivityItems"
         :bottom-items="bottomActivityItems"
         :active-id="activeActivity"
@@ -37,7 +39,7 @@
           <SettingDropdown />
         </template>
       </ActivityBar>
-      <div v-if="!sidebarCollapsed" class="sidebar" :style="{ width: sidebarWidth + 'px' }">
+      <div v-if="!store.isSingleFile && !sidebarCollapsed" class="sidebar" :style="{ width: sidebarWidth + 'px' }">
         <template v-if="activeActivity === 'explorer'">
           <SideBar
             :title="activeActivityTitle"
@@ -101,9 +103,10 @@
           />
         </template>
       </div>
-      <div v-if="!sidebarCollapsed" class="resize-handle" @mousedown="startSidebarResize"></div>
+      <div v-if="!store.isSingleFile && !sidebarCollapsed" class="resize-handle" @mousedown="startSidebarResize"></div>
       <div class="editor-area">
         <n-tabs
+          v-if="!store.isSingleFile"
           v-model:value="activeTabValue"
           type="card"
           closable
@@ -181,7 +184,6 @@
                   {{ $t('placeholder.openFolder') }}
                 </n-button>
                 <n-button
-                  v-if="fs.env !== 'electron'"
                   size="medium"
                   @click="handleOpenFile"
                 >
@@ -218,6 +220,26 @@
       @cancel="onSaveDialogCancel"
     />
     <AboutDialog :visible="showAboutDialog" @close="showAboutDialog = false" />
+    <n-modal
+      v-model:show="showWorkspaceDialog"
+      preset="card"
+      :title="$t('workspaceDialog.title')"
+      style="width: 520px"
+      @after-leave="onWorkspaceDialogCancel"
+    >
+      <n-text depth="3" class="ws-dialog-path">
+        {{ $t('workspaceDialog.pathLabel') }}: {{ workspaceDialogPath }}
+      </n-text>
+      <template #footer>
+        <n-button @click="onWorkspaceDialogCancel">{{ $t('workspaceDialog.cancel') }}</n-button>
+        <n-button @click="onWorkspaceDialogCurrent">
+          {{ fs.env === 'electron' ? $t('workspaceDialog.currentWindow') : $t('workspaceDialog.currentTab') }}
+        </n-button>
+        <n-button type="primary" @click="onWorkspaceDialogNew">
+          {{ fs.env === 'electron' ? $t('workspaceDialog.newWindow') : $t('workspaceDialog.newTab') }}
+        </n-button>
+      </template>
+    </n-modal>
     <OpenFolderDialog
       v-if="showOpenFolderDialog"
       @confirm="onOpenFolderConfirm"
@@ -255,7 +277,7 @@
 <script setup lang="ts">
 import { ref, reactive, watch, computed, onMounted, onUnmounted, nextTick } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { NTabs, NTabPane, NIcon, NButton } from 'naive-ui';
+import { NTabs, NTabPane, NIcon, NButton, NModal, NText } from 'naive-ui';
 import { useEditorStore } from '../../stores/editor';
 import { useFileSystem } from '../../composables/useFileSystem';
 import { getEditorInstance } from '../../services/editorInstance';
@@ -422,6 +444,18 @@ function initRightPanelWidth() {
 onMounted(() => {
   nextTick(() => initRightPanelWidth());
   window.addEventListener('resize', onWindowResize);
+
+  if (bcChannel) {
+    bcChannel.addEventListener('message', (event) => {
+      const msg = event.data;
+      if (msg?.type === 'CHECK' && msg.path) {
+        if (currentWorkspacePaths.value.includes(msg.path)) {
+          bcChannel.postMessage({ type: 'OPEN', path: msg.path });
+        }
+      }
+    });
+    updateWorkspacePaths();
+  }
 });
 
 function onWindowResize() {
@@ -481,11 +515,54 @@ const saveDialogDefaultName = ref('');
 const showAboutDialog = ref(false);
 let saveDialogResolver: ((value: string | null) => void) | null = null;
 
+// ===== 工作区打开确认弹窗 =====
+const showWorkspaceDialog = ref(false);
+const workspaceDialogPath = ref('');
+const workspaceDialogIsFile = ref(false);
+let workspaceDialogResolver: ((choice: 'new' | 'current' | 'cancel') => void) | null = null;
+
 // ===== 打开文件/文件夹对话框状态 =====
 const showOpenFolderDialog = ref(false);
 const showOpenFileDialog = ref(false);
 let openFolderResolver: ((value: string | null) => void) | null = null;
 let openFileResolver: ((value: string | null) => void) | null = null;
+
+// ===== 跨标签页工作区去重 (BroadcastChannel) =====
+const bcChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('vibeeditor-workspace-sync') : null;
+const currentWorkspacePaths = ref<string[]>([]);
+let bcResponseTimer: ReturnType<typeof setTimeout> | null = null;
+
+function normalizePathForDedup(p: string): string {
+  return p.replace(/\\/g, '/').replace(/\/$/, '').toLowerCase();
+}
+
+function updateWorkspacePaths() {
+  currentWorkspacePaths.value = store.workspaceRoots.map(r => normalizePathForDedup(r.path));
+  if (bcChannel) {
+    bcChannel.postMessage({ type: 'UPDATE', paths: [...currentWorkspacePaths.value] });
+  }
+}
+
+async function checkWorkspaceDuplicate(path: string): Promise<boolean> {
+  if (!bcChannel) return false;
+  const normalized = normalizePathForDedup(path);
+  if (currentWorkspacePaths.value.includes(normalized)) return true;
+  return new Promise((resolve) => {
+    let resolved = false;
+    const handler = (event: MessageEvent) => {
+      if (event.data?.type === 'OPEN' && event.data.path === normalized) {
+        resolved = true;
+        resolve(true);
+      }
+    };
+    bcChannel.addEventListener('message', handler);
+    bcChannel.postMessage({ type: 'CHECK', path: normalized });
+    bcResponseTimer = setTimeout(() => {
+      bcChannel.removeEventListener('message', handler);
+      if (!resolved) resolve(false);
+    }, 300);
+  });
+}
 
 // ===== Agent 编辑快照（用于撤销） =====
 const editSnapshots = ref<Map<string, string>>(new Map());
@@ -654,6 +731,11 @@ watch(
   { deep: true }
 );
 
+// 工作区根变化时更新跨标签页去重状态
+watch(() => store.workspaceRoots, () => {
+  updateWorkspacePaths();
+}, { deep: true });
+
 /**
  * 文件保存后的回调：刷新所有已展开目录的内容
  *
@@ -696,16 +778,93 @@ function clearDirState() {
   dirChildren.value = {};
 }
 
+function hasExistingWorkspace(): boolean {
+  return store.workspaceRoots.length > 0;
+}
+
+function showWorkspaceConfirmDialog(path: string, isFile: boolean): Promise<'new' | 'current' | 'cancel'> {
+  workspaceDialogPath.value = path;
+  workspaceDialogIsFile.value = isFile;
+  showWorkspaceDialog.value = true;
+  return new Promise(resolve => { workspaceDialogResolver = resolve; });
+}
+function onWorkspaceDialogNew() { showWorkspaceDialog.value = false; workspaceDialogResolver?.('new'); }
+function onWorkspaceDialogCurrent() { showWorkspaceDialog.value = false; workspaceDialogResolver?.('current'); }
+function onWorkspaceDialogCancel() {
+  showWorkspaceDialog.value = false;
+  workspaceDialogResolver?.('cancel');
+}
+
+async function openFolderInNewContext(existingPath?: string) {
+  const path = existingPath || await fs.resolveFolderPath();
+  if (!path) return;
+
+  if (fs.env === 'electron') {
+    if (window.electronAPI?.createWindow) {
+      const result = await window.electronAPI.createWindow(path);
+      if (result?.status === 'duplicate') {
+        if (window.electronAPI.showNotification) {
+          window.electronAPI.showNotification('Workspace Already Open', `"${path}" is already open in another window.`);
+        }
+      }
+    }
+  } else {
+    if (await checkWorkspaceDuplicate(path)) {
+      alert(`Workspace "${path}" is already open in another tab.`);
+      return;
+    }
+    window.open(window.location.origin + '?workspace=' + encodeURIComponent(path), '_blank');
+  }
+}
+
+async function openFileInNewContext(existingPath?: string) {
+  const path = existingPath || await fs.resolveFilePath();
+  if (!path) return;
+
+  if (fs.env === 'electron') {
+    if (window.electronAPI?.createWindow) {
+      const result = await window.electronAPI.createWindow(path, true);
+      if (result?.status === 'duplicate') {
+        if (window.electronAPI.showNotification) {
+          window.electronAPI.showNotification('Workspace Already Open', `"${path}" is already open in another window.`);
+        }
+      }
+    }
+  } else {
+    if (await checkWorkspaceDuplicate(path)) {
+      alert(`Workspace "${path}" is already open in another tab.`);
+      return;
+    }
+    window.open(window.location.origin + '?file=' + encodeURIComponent(path), '_blank');
+  }
+}
+
 /** 打开文件夹并重置文件树状态 */
 async function handleOpenFolder() {
   clearDirState();
-  await fs.openFolderDialog();
+  if (hasExistingWorkspace()) {
+    const path = await fs.resolveFolderPath();
+    if (!path) return;
+    const choice = await showWorkspaceConfirmDialog(path, false);
+    if (choice === 'new') await openFolderInNewContext(path);
+    else if (choice === 'current') await fs.openFolderDialog();
+  } else {
+    await fs.openFolderDialog();
+  }
 }
 
 /** 连接到服务端并重置文件树状态 */
 async function handleOpenFile() {
   clearDirState();
-  await fs.openFileDialog();
+  if (hasExistingWorkspace()) {
+    const path = await fs.resolveFilePath();
+    if (!path) return;
+    const choice = await showWorkspaceConfirmDialog(path, true);
+    if (choice === 'new') await openFileInNewContext(path);
+    else if (choice === 'current') await fs.openFileDialog();
+  } else {
+    await fs.openFileDialog();
+  }
 }
 
 function isFileDrag(dataTransfer: DataTransfer | null): boolean {
@@ -804,6 +963,7 @@ onMounted(async () => {
           handleOpenFolder();
           break;
         case 'open-file':
+        case 'open-local-file':
           handleOpenFile();
           break;
         case 'save':
@@ -820,6 +980,33 @@ onMounted(async () => {
           break;
       }
     });
+  }
+
+  // URL parameter workspace loading (new tab / new window)
+  const urlParams = new URLSearchParams(window.location.search);
+  const workspaceParam = urlParams.get('workspace');
+  if (workspaceParam) {
+    const decodedPath = decodeURIComponent(workspaceParam);
+    clearDirState();
+    try {
+      await fs.openWorkspaceViaPath(decodedPath);
+      updateWorkspacePaths();
+    } catch (e: any) {
+      console.error('[VibeEditor] Failed to open workspace via URL param:', e);
+      fs.error = `Failed to open workspace: ${e instanceof Error ? e.message : String(e)}`;
+    }
+  }
+  const fileParam = urlParams.get('file');
+  if (fileParam) {
+    const decodedPath = decodeURIComponent(fileParam);
+    clearDirState();
+    try {
+      await fs.openFileAsLightweightWorkspace(decodedPath);
+      updateWorkspacePaths();
+    } catch (e: any) {
+      console.error('[VibeEditor] Failed to open file via URL param:', e);
+      fs.error = `Failed to open file: ${e instanceof Error ? e.message : String(e)}`;
+    }
   }
 });
 
@@ -1155,5 +1342,12 @@ async function handleApplyEdits(edits: ParsedEdit[]) {
 .resize-sw {
   bottom: 0; left: 0; width: 8px; height: 8px;
   cursor: nesw-resize;
+}
+.ws-dialog-path {
+  display: block;
+  padding: 10px 0;
+  word-break: break-all;
+  font-family: monospace;
+  font-size: 13px;
 }
 </style>

@@ -1,5 +1,4 @@
 import { AgentRuntime, type AgentRuntimeConfig, createLogger, LOG_CATEGORY } from '@vibeeditor/agent';
-import { LocalFileSystem } from '@vibeeditor/core';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import type { LLMGateway } from '@vibeeditor/agent';
@@ -44,6 +43,7 @@ export interface WorkspaceData {
   workspaceId: string;
   rootPath: string;
   rootName: string;
+  lightweight: boolean;
   openTabs: StoredTab[];
   activeTabPath?: string;
   createdAt: number;
@@ -57,6 +57,7 @@ interface ActiveWorkspace {
   runtime: AgentRuntime;
   data: WorkspaceData;
   config: AgentRuntimeConfig;
+  lightweight: boolean;
 }
 
 export class WorkspaceManager {
@@ -67,17 +68,20 @@ export class WorkspaceManager {
     this.configDir = configDir;
   }
 
-  async openWorkspace(rootPath: string, llmGateway: LLMGateway): Promise<WorkspaceData> {
+  async openWorkspace(rootPath: string, llmGateway: LLMGateway, lightweight = false): Promise<WorkspaceData> {
     const startMs = Date.now();
     const absRoot = path.resolve(rootPath);
-    let stat: { isDirectory(): boolean };
-    try {
-      stat = await fs.stat(absRoot);
-    } catch {
-      throw new Error(`Path does not exist: ${absRoot}`);
-    }
-    if (!stat.isDirectory()) {
-      throw new Error(`Path is not a directory: ${absRoot}`);
+
+    if (!lightweight) {
+      let stat: { isDirectory(): boolean };
+      try {
+        stat = await fs.stat(absRoot);
+      } catch {
+        throw new Error(`Path does not exist: ${absRoot}`);
+      }
+      if (!stat.isDirectory()) {
+        throw new Error(`Path is not a directory: ${absRoot}`);
+      }
     }
 
     const activeProvider = llmGateway.getActiveProvider();
@@ -94,7 +98,7 @@ export class WorkspaceManager {
 
     const runtime = new AgentRuntime(config);
 
-    const existingData = await this.readWorkspaceFile(absRoot);
+    const existingData = lightweight ? null : await this.readWorkspaceFile(absRoot);
     const workspaceId = existingData?.workspaceId || `ws_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const now = Date.now();
 
@@ -102,6 +106,7 @@ export class WorkspaceManager {
       workspaceId,
       rootPath: absRoot,
       rootName: path.basename(absRoot),
+      lightweight,
       openTabs: existingData?.openTabs || [],
       activeTabPath: existingData?.activeTabPath,
       agentSessions: existingData?.agentSessions,
@@ -111,9 +116,8 @@ export class WorkspaceManager {
       lastOpenedAt: now,
     };
 
-    this.workspaces.set(workspaceId, { runtime, data, config });
+    this.workspaces.set(workspaceId, { runtime, data, config, lightweight });
 
-    // 恢复持久化的 Agent 会话
     if (data.agentSessions && data.agentSessions.length > 0) {
       for (const s of data.agentSessions) {
         const msgs: SessionMessage[] = s.messages.map(m => ({
@@ -127,9 +131,11 @@ export class WorkspaceManager {
       }
     }
 
-    await this.writeWorkspaceFile(absRoot, data);
+    if (!lightweight) {
+      await this.writeWorkspaceFile(absRoot, data);
+    }
 
-    log.info(`Workspace opened: id=${workspaceId}, root="${absRoot}", ${Date.now() - startMs}ms`, { workspaceId, rootPath: absRoot });
+    log.info(`Workspace opened: id=${workspaceId}, root="${absRoot}", lightweight=${lightweight}, ${Date.now() - startMs}ms`, { workspaceId, rootPath: absRoot });
     return data;
   }
 
@@ -161,7 +167,9 @@ export class WorkspaceManager {
     if (update.activeTabPath !== undefined) ws.data.activeTabPath = update.activeTabPath;
     ws.data.lastOpenedAt = Date.now();
 
-    await this.writeWorkspaceFile(ws.data.rootPath, ws.data);
+    if (!ws.lightweight) {
+      await this.writeWorkspaceFile(ws.data.rootPath, ws.data);
+    }
   }
 
   /** 保存或更新单个 Agent 会话到工作区数据并立即写盘 */
@@ -181,8 +189,10 @@ export class WorkspaceManager {
     }
     ws.data.lastOpenedAt = Date.now();
 
-    await this.writeWorkspaceFile(ws.data.rootPath, ws.data);
-    log.debug(`Agent session saved: workspaceId=${workspaceId}, sessionId=${sessionData.id}, messages=${sessionData.messages.length}`);
+    if (!ws.lightweight) {
+      await this.writeWorkspaceFile(ws.data.rootPath, ws.data);
+    }
+    log.debug(`Agent session saved: workspaceId=${workspaceId}, sessionId=${sessionData.id}, messages=${sessionData.messages.length}, lightweight=${ws.lightweight}`);
   }
 
   /** 删除工作区下的单个 Agent 会话 */
@@ -196,7 +206,9 @@ export class WorkspaceManager {
     ws.runtime.deleteSession(sessionId);
     ws.data.lastOpenedAt = Date.now();
 
-    await this.writeWorkspaceFile(ws.data.rootPath, ws.data);
+    if (!ws.lightweight) {
+      await this.writeWorkspaceFile(ws.data.rootPath, ws.data);
+    }
   }
 
   /** 获取工作区下所有 Agent 会话 */
@@ -211,11 +223,12 @@ export class WorkspaceManager {
     if (!ws) return;
 
     const rootPath = ws.data.rootPath;
-    // 关闭前最后一次持久化
-    try { await this.writeWorkspaceFile(ws.data.rootPath, ws.data); } catch { /* ignore */ }
+    if (!ws.lightweight) {
+      try { await this.writeWorkspaceFile(ws.data.rootPath, ws.data); } catch { /* ignore */ }
+    }
     try { await ws.runtime.dispose(); } catch { /* ignore */ }
     this.workspaces.delete(workspaceId);
-    log.info(`Workspace closed: id=${workspaceId}, root="${rootPath}"`, { workspaceId, rootPath });
+    log.info(`Workspace closed: id=${workspaceId}, root="${rootPath}", lightweight=${ws.lightweight}`, { workspaceId, rootPath });
   }
 
   async disposeAll(): Promise<void> {

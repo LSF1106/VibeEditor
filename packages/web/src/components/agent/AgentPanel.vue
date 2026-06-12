@@ -69,8 +69,8 @@
       <button class="guide-cta" @click="showSettings = true">{{ $t('agent.addProvider') }}</button>
     </div>
 
-    <!-- 无工作区时的提示（仅 server 模式） -->
-    <div v-else-if="!editorStore.activeWorkspaceId" class="agent-guide">
+    <!-- 无工作区时的提示（仅 server 模式且确实无工作区时） -->
+    <div v-else-if="!editorStore.activeWorkspaceId && editorStore.workspaceRoots.length === 0" class="agent-guide">
       <div class="guide-icon"><n-icon size="36" :component="FolderOpenOutline" /></div>
       <div class="guide-title">{{ $t('agent.noWorkspaceTitle') }}</div>
       <div class="guide-desc">{{ $t('agent.noWorkspaceDesc') }}</div>

@@ -12,7 +12,6 @@
   },
   "dependencies": {
     "@vibeeditor/agent": "0.1.0",
-    "@vibeeditor/core": "0.1.0",
     "express": "^4.18.2",
     "cors": "^2.8.5"
   },

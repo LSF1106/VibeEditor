@@ -2,20 +2,32 @@
 
 VibeEditor backend — Express-based file operations API and AI Agent endpoints.
 
+---
+
 ## Architecture
 
 ```
 src/
-├── index.ts          # createApp() / startServer() exports
-├── run.ts            # Entry point (reads app-config.json, calls startServer)
+├── index.ts              # createApp() / startServer() exports
+├── run.ts                # Entry point (reads app-config.json, calls startServer)
+├── fs/
+│   ├── local.ts          # LocalFileSystem — wraps Node.js fs module
+│   └── types.ts          # FileEntry type definition
 ├── routes/
-│   ├── files.ts      # /api/files/* — File system CRUD
-│   ├── agent.ts      # /api/agent/* — Agent chat, SSE streaming, edit application
-│   ├── mcp.ts        # /api/mcp/* — MCP server connectivity testing
-│   └── config.ts     # /api/config/* — JSON config file read/write
-└── middleware/
-    └── auth.ts       # Bearer token auth middleware (not wired in, requires manual import)
+│   ├── files.ts          # /api/files/*    — File system CRUD (10 endpoints)
+│   ├── agent.ts          # /api/agent/*    — Agent chat, SSE streaming, edit application (3 endpoints)
+│   ├── workspace.ts      # /api/workspace/* — Workspace management, agent session persistence (9 endpoints)
+│   ├── llm.ts            # /api/llm/*      — LLM provider CRUD + test (6 endpoints)
+│   ├── mcp.ts            # /api/mcp/*      — MCP server CRUD + test/tools (6 endpoints)
+│   └── config.ts         # /api/config/*   — JSON config file read/write (2 endpoints)
+├── middleware/
+│   ├── auth.ts           # Bearer token auth middleware (not wired in, requires manual import)
+│   └── requestLogger.ts  # HTTP request logging middleware
+└── workspace/
+    └── manager.ts        # WorkspaceManager — workspace lifecycle, AgentRuntime cache, session persistence
 ```
+
+---
 
 ## Getting Started
 
@@ -27,84 +39,1398 @@ npm run dev -w packages/server
 npm run build -w packages/server
 node packages/server/dist/run.js
 
-# Or via root scripts (builds agent + core first)
+# Via root scripts (builds agent + core first)
 npm run dev:server
 npm run dev:all      # server + web concurrently
 ```
 
-## Environment Variables
+## Configuration
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `PORT` | 20385 | Server port (takes precedence over `SERVER_PORT`) |
-| `SERVER_PORT` | 20385 | Server port (fallback) |
-| `SERVE_STATIC` | — | Static files directory, serves built frontend when set |
-| `AUTH_TOKEN` | — | Bearer token (requires manual wiring of `auth.ts` middleware) |
+### app-config.json (project root, read by run.ts)
 
-The default port 20385 is defined in `app-config.json` via the `serverPort` field.
+```json
+{
+  "serverPort": 20385,
+  "configDir": "./config"
+}
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `serverPort` | `number` | `20385` | Server port |
+| `configDir` | `string` | `"./config"` | Config directory (LLM config, MCP config, workspace data) |
+
+### ServerConfig (createApp / startServer parameter)
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `port` | `number?` | `20385` | Server port |
+| `host` | `string?` | `'0.0.0.0'` | Listen address |
+| `corsOrigin` | `string?` | `'*'` | CORS allowed origin |
+| `serveStatic` | `string?` | — | Static files directory, serves built frontend when set |
+| `configDir` | `string?` | `'./config'` | Config directory |
+
+### Environment Variables
+
+| Variable | Default | Priority | Description |
+|----------|---------|----------|-------------|
+| `PORT` | — | Highest | Server port |
+| `SERVER_PORT` | — | Medium (fallback) | Server port |
+| `SERVE_STATIC` | — | — | Static files directory path |
+| `AUTH_TOKEN` | — | — | Bearer token (requires manual wiring of auth.ts middleware) |
+
+---
+
+## Common Conventions
+
+### Base URL
+
+```
+http://localhost:20385
+```
+
+### Request Format
+
+- `Content-Type: application/json` (POST / PUT bodies are JSON)
+- Max body size: **50MB** (`express.json({ limit: '50mb' })`)
+
+### Successful Responses
+
+All successful responses use HTTP status `2xx` with `Content-Type: application/json` (except SSE endpoints).
+
+### Error Response Format
+
+```json
+{
+  "error": "Error description"
+}
+```
+
+Common status codes:
+| Status | Meaning |
+|--------|---------|
+| `400` | Missing or invalid request parameters |
+| `403` | Path traversal blocked |
+| `404` | Resource not found |
+| `500` | Internal server error |
+
+### Response Headers
+
+- `X-Request-Id`: Auto-generated unique ID per request for log tracing
+
+---
+
+## Common Data Types
+
+### FileEntry
+
+```typescript
+interface FileEntry {
+  name: string;           // File/directory name
+  path: string;           // Relative path (POSIX style, "/" separated)
+  isDirectory: boolean;   // Whether it's a directory
+  size?: number;          // File size in bytes
+  modifiedAt?: number;    // Modification time (Unix ms timestamp)
+  children?: FileEntry[]; // Child entries (for recursive use)
+}
+```
+
+### StoredTab
+
+```typescript
+interface StoredTab {
+  path: string;          // File path
+  cursorLine?: number;   // Cursor line number
+  cursorColumn?: number; // Cursor column number
+}
+```
+
+### WorkspaceAgentSession
+
+```typescript
+interface WorkspaceAgentSession {
+  id: string;              // Session unique ID
+  name: string;            // Session name
+  nameAutoGenerated: boolean; // Whether the name was auto-generated
+  createdAt: number;       // Creation time (Unix ms timestamp)
+  lastMessageAt?: number;  // Last message time
+  messages: Array<{
+    id: string;
+    role: string;          // "user" | "agent" | "system"
+    content: string;
+    timestamp: number;
+    agentId?: string;
+  }>;
+}
+```
+
+### WorkspaceData
+
+```typescript
+interface WorkspaceData {
+  workspaceId: string;              // Workspace unique ID
+  rootPath: string;                 // Workspace root directory absolute path
+  rootName: string;                 // Root directory name
+  openTabs: StoredTab[];            // Open tabs
+  activeTabPath?: string;           // Current active tab path
+  createdAt: number;                // Creation time (Unix ms timestamp)
+  lastOpenedAt: number;             // Last opened time
+  agentSessions?: WorkspaceAgentSession[]; // Agent session list
+  llm?: WorkspaceLLMConfig;         // Workspace-level LLM config (reserved)
+  mcp?: WorkspaceMcpConfig;         // Workspace-level MCP config (reserved)
+}
+```
+
+### LLMProvider
+
+```typescript
+interface LLMProvider {
+  id: string;       // Auto-generated unique ID
+  name: string;     // Display name
+  apiUrl: string;   // API URL
+  apiKey: string;   // API Key
+  model: string;    // Model name
+  enabled: boolean; // Whether enabled
+}
+```
+
+### McpServerConfig
+
+```typescript
+type McpServerType = 'stdio' | 'sse' | 'http';
+
+interface McpServerConfig {
+  type: McpServerType;   // Connection type
+  command?: string;      // stdio mode: executable path
+  args?: string[];       // stdio mode: command arguments
+  env?: Record<string, string>; // stdio mode: environment variables
+  cwd?: string;          // stdio mode: working directory
+  url?: string;          // sse/http mode: server URL
+  headers?: Record<string, string>; // sse/http mode: custom headers
+  sessionId?: string;    // sse mode: session ID
+  name?: string;         // Server name
+}
+```
+
+### McpServerEntry
+
+```typescript
+interface McpServerEntry {
+  id: string;                 // Auto-generated unique ID
+  name: string;               // Display name
+  description?: string;       // Description
+  enabled: boolean;           // Whether enabled
+  config: McpServerConfig;    // Connection configuration
+}
+```
+
+### AgentContext
+
+```typescript
+interface AgentContext {
+  openFiles?: Array<{ path: string; content: string; language?: string }>;
+  fileTree?: string;    // Text representation of file tree
+  cursorPosition?: { file: string; line: number; column: number };
+  diagnostics?: string; // Diagnostic info
+}
+```
+
+### AgentEditResult
+
+```typescript
+interface AgentEditResult {
+  path: string;        // File path
+  operation: 'create' | 'modify' | 'delete'; // Operation type
+  content?: string;    // File content for create/modify
+  original?: string;   // Original content for modify
+}
+```
+
+---
 
 ## API Endpoints
 
-### Health Check
+---
+
+### 1. Health Check
+
+#### `GET /api/health`
+
+Server health check.
+
+**Response** `200`
+
+```json
+{
+  "status": "ok",
+  "timestamp": 1717430400000
+}
+```
+
+---
+
+### 2. File Operations `/api/files`
+
+All path operations are protected against directory traversal attacks via `getSafePath` (`resolve → startsWith` verification).
+
+#### `GET /api/files/list`
+
+List directory contents, directories first, alphabetically sorted.
+
+| Parameter | Location | Type | Required | Default | Description |
+|-----------|----------|------|----------|---------|-------------|
+| `root` | query | `string` | No | `process.cwd()` | Root directory absolute path |
+| `path` | query | `string` | No | `"."` | Directory path relative to root |
+
+**Response** `200`: `FileEntry[]`
+
+```json
+[
+  {
+    "name": "src",
+    "path": "src",
+    "isDirectory": true,
+    "size": 0,
+    "modifiedAt": 1717430400000
+  },
+  {
+    "name": "README.md",
+    "path": "README.md",
+    "isDirectory": false,
+    "size": 1024,
+    "modifiedAt": 1717430400000
+  }
+]
+```
+
+---
+
+#### `GET /api/files/read`
+
+Read file content.
+
+| Parameter | Location | Type | Required | Default | Description |
+|-----------|----------|------|----------|---------|-------------|
+| `root` | query | `string` | No | `process.cwd()` | Root directory absolute path |
+| `path` | query | `string` | Yes | — | File path |
+| `binary` | query | `string` | No | `"false"` | `"true"` returns base64 data URI |
+
+**Text mode response** `200`
+
+```json
+{
+  "path": "README.md",
+  "content": "# Hello World\n\nFile content..."
+}
+```
+
+**Binary mode response** `200` (`binary=true`)
+
+```json
+{
+  "path": "logo.png",
+  "content": "data:image/png;base64,iVBORw0KGgoAAAA..."
+}
+```
+
+Supported MIME type auto-detection: png, jpg, jpeg, gif, svg, webp, bmp, ico, tiff; others default to `application/octet-stream`.
+
+---
+
+#### `GET /api/files/read-buffer`
+
+Read file as raw base64 string (no data URI prefix).
+
+| Parameter | Location | Type | Required | Description |
+|-----------|----------|------|----------|-------------|
+| `root` | query | `string` | No | Root directory absolute path |
+| `path` | query | `string` | Yes | File path |
+
+**Response** `200`
+
+```json
+{
+  "path": "data.bin",
+  "data": "iVBORw0KGgoAAAA..."
+}
+```
+
+---
+
+#### `POST /api/files/write`
+
+Write file, auto-creates parent directories.
+
+**Request Body**
+
+```json
+{
+  "root": "/path/to/project",
+  "path": "src/index.ts",
+  "content": "// File content..."
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `root` | `string` | No | Root directory absolute path |
+| `path` | `string` | Yes | File relative path |
+| `content` | `string` | Yes | File content (UTF-8) |
+
+**Response** `200`
+
+```json
+{ "success": true }
+```
+
+---
+
+#### `DELETE /api/files/delete`
+
+Delete a file.
+
+| Parameter | Location | Type | Required | Description |
+|-----------|----------|------|----------|-------------|
+| `root` | query | `string` | No | Root directory absolute path |
+| `path` | query | `string` | Yes | File path |
+
+**Response** `200`
+
+```json
+{ "success": true }
+```
+
+---
+
+#### `POST /api/files/mkdir`
+
+Create directory (recursively creates parent directories).
+
+**Request Body**
+
+```json
+{
+  "root": "/path/to/project",
+  "path": "src/components"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `root` | `string` | No | Root directory absolute path |
+| `path` | `string` | Yes | Directory relative path |
+
+**Response** `200`
+
+```json
+{ "success": true }
+```
+
+---
+
+#### `DELETE /api/files/rmdir`
+
+Remove directory.
+
+| Parameter | Location | Type | Required | Default | Description |
+|-----------|----------|------|----------|---------|-------------|
+| `root` | query | `string` | No | `process.cwd()` | Root directory absolute path |
+| `path` | query | `string` | Yes | — | Directory path |
+| `recursive` | query | `string` | No | `"false"` | `"true"` to recursively remove non-empty directories |
+
+**Response** `200`
+
+```json
+{ "success": true }
+```
+
+---
+
+#### `GET /api/files/exists`
+
+Check if file or directory exists.
+
+| Parameter | Location | Type | Required | Description |
+|-----------|----------|------|----------|-------------|
+| `root` | query | `string` | No | Root directory absolute path |
+| `path` | query | `string` | Yes | File/directory path |
+
+**Response** `200`
+
+```json
+{ "exists": true }
+```
+
+---
+
+#### `GET /api/files/stat`
+
+Get file or directory metadata.
+
+| Parameter | Location | Type | Required | Description |
+|-----------|----------|------|----------|-------------|
+| `root` | query | `string` | No | Root directory absolute path |
+| `path` | query | `string` | Yes | File/directory path |
+
+**Response** `200`: `FileEntry`
+
+```json
+{
+  "name": "README.md",
+  "path": "README.md",
+  "isDirectory": false,
+  "size": 2048,
+  "modifiedAt": 1717430400000
+}
+```
+
+---
+
+#### `POST /api/files/rename`
+
+Rename or move file/directory (auto-creates target parent directory).
+
+**Request Body**
+
+```json
+{
+  "root": "/path/to/project",
+  "oldPath": "old-name.ts",
+  "newPath": "src/new-name.ts"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `root` | `string` | No | Root directory absolute path |
+| `oldPath` | `string` | Yes | Original path |
+| `newPath` | `string` | Yes | New path |
+
+**Response** `200`
+
+```json
+{ "success": true }
+```
+
+---
+
+### 3. Agent `/api/agent`
+
+All agent logic is delegated to `@vibeeditor/agent`. The server handles routing and Runtime lifecycle management.
+
+#### `POST /api/agent/chat`
+
+One-shot agent conversation, returns a single complete response.
+
+**Request Body**
+
+```json
+{
+  "message": "Help me create an Express server",
+  "context": {
+    "openFiles": [
+      { "path": "src/index.ts", "content": "...", "language": "typescript" }
+    ],
+    "fileTree": "├── src/\n│   └── index.ts\n└── package.json",
+    "cursorPosition": { "file": "src/index.ts", "line": 10, "column": 5 }
+  },
+  "sessionId": "session_123",
+  "workspaceId": "ws_abc123",
+  "workspaceRoot": "/path/to/project",
+  "config": {
+    "mode": "build",
+    "providerId": "provider_id_here",
+    "systemPrompt": "You are a professional frontend engineer",
+    "temperature": 0.7,
+    "maxTokens": 4096
+  }
+}
+```
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `message` | `string` | Yes | — | User message |
+| `context` | `AgentContext?` | No | — | Agent context |
+| `sessionId` | `string?` | No | `"default"` | Session ID (for multi-turn conversations) |
+| `workspaceId` | `string?` | No | — | Workspace ID (reuses cached Runtime) |
+| `workspaceRoot` | `string?` | No | — | Workspace root directory |
+| `config` | `object?` | No | — | Agent configuration |
+| `config.mode` | `'build' \| 'plan'` | No | `"plan"` | `build`: multi-turn agent loop (with tools); `plan`: direct LLM chat |
+| `config.providerId` | `string?` | No | Active provider | LLM provider ID |
+| `config.systemPrompt` | `string?` | No | — | System prompt |
+| `config.temperature` | `number?` | No | — | Temperature parameter |
+| `config.maxTokens` | `number?` | No | — | Max tokens |
+
+**Response** `200`
+
+```json
+{
+  "id": "agent_1717430400000",
+  "role": "assistant",
+  "content": "Sure, I'll help you create an Express server...",
+  "timestamp": 1717430400000
+}
+```
+
+---
+
+#### `POST /api/agent/stream`
+
+SSE streaming agent conversation. This is the **core endpoint**, supporting multi-turn agent loop (`build` mode) and direct LLM streaming (`plan` mode).
+
+**Request Body**: Same as `/api/agent/chat`.
+
+**Response Headers**
+
+| Header | Value |
+|--------|-------|
+| `Content-Type` | `text/event-stream` |
+| `Cache-Control` | `no-cache` |
+| `Connection` | `keep-alive` |
+| `X-Accel-Buffering` | `no` |
+| `X-Request-Id` | `<unique request ID>` |
+
+**SSE Event Types**
+
+| Event Type | Data Fields | Description |
+|------------|-------------|-------------|
+| `chunk` | `{ chunk: string }` | Text fragment from LLM output |
+| `thinking` | `{ thinking: string }` | Agent reasoning/thinking content |
+| `tool_start` | `{ tool_start: string }` | Tool invocation starts, format: `🔍 tool_name: description` |
+| `tool_end` | `{ tool_end: string }` | Tool invocation completes, format: `tool_name complete` |
+| `tool_result` | `{ tool_result: { name: string, content: string } }` | Tool execution result |
+| `done` | `{ done: true, edits: AgentEditResult[], toolCalls: number }` | Stream ends, contains edit results and tool call count |
+| `error` | `{ error: string }` | Error message |
+
+**Heartbeat**: Server sends SSE comment `: heartbeat` every 15 seconds to prevent proxy timeouts.
+
+**Example SSE Stream**
 
 ```
-GET /api/health
-→ { status: "ok", timestamp: 1717430400000 }
+data: {"thinking":"User wants to create an Express server..."}
+
+data: {"tool_start":"🔍 read_file: package.json"}
+
+data: {"tool_end":"read_file complete"}
+
+data: {"tool_result":{"name":"read_file","content":"{\n  \"name\": \"my-project\"\n}"}}
+
+data: {"chunk":"Sure"}
+
+data: {"chunk":", I'll help"}
+
+data: {"chunk":" you create an Express server."}
+
+data: {"done":true,"edits":[],"toolCalls":1}
 ```
 
-### File Operations `/api/files`
+---
 
-All path operations are protected against traversal attacks via `getSafePath` (`resolve → startsWith` checks).
+#### `POST /api/agent/apply-edits`
 
-| Method | Path | Parameters | Description |
-|--------|------|------------|-------------|
-| `GET` | `/list` | `?root=&path=` | List directory, directories first |
-| `GET` | `/read` | `?root=&path=&binary=` | Read text file; `binary=true` returns base64 data URI |
-| `GET` | `/read-buffer` | `?root=&path=` | Read file as base64 |
-| `POST` | `/write` | `{ root, path, content }` | Write file, auto-creates parent directories |
-| `DELETE` | `/delete` | `?root=&path=` | Delete file |
-| `POST` | `/mkdir` | `{ root, path }` | Create directory (recursive) |
-| `DELETE` | `/rmdir` | `?root=&path=&recursive=` | Remove directory |
-| `GET` | `/exists` | `?root=&path=` | Check if file/directory exists |
-| `GET` | `/stat` | `?root=&path=` | Get file metadata |
-| `POST` | `/rename` | `{ root, oldPath, newPath }` | Rename/move file |
+Apply agent-generated edits to disk.
 
-### Agent `/api/agent`
+**Request Body**
 
-All agent logic is delegated to `@vibeeditor/agent`. The server only handles routing.
+```json
+{
+  "rootPath": "/path/to/project",
+  "edits": [
+    {
+      "path": "src/index.ts",
+      "operation": "create",
+      "content": "import express from 'express';\n\nconst app = express();"
+    },
+    {
+      "path": "README.md",
+      "operation": "modify",
+      "content": "# Updated Readme",
+      "original": "# Old Readme"
+    },
+    {
+      "path": "old-file.ts",
+      "operation": "delete"
+    }
+  ]
+}
+```
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/chat` | One-shot conversation, returns `AgentMessage` |
-| `POST` | `/stream` | SSE streaming. `mode=build` runs multi-turn agent loop; `mode=plan` streams LLM response directly. Supports optional `mcpConfig` for MCP server connection |
-| `POST` | `/apply-edits` | Write `AgentEditResult[]` to disk |
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `rootPath` | `string` | Yes | Root directory path |
+| `edits` | `AgentEditResult[]` | Yes | Edit operations (non-empty array) |
 
-SSE event types: `chunk`, `thinking`, `tool_start`, `tool_end`, `done`, `error`.
+**Response** `200`: Return value of `executeEdits()`
 
-### MCP `/api/mcp`
+---
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/test` | Test MCP server connectivity (stdio / sse / http) |
+### 4. Workspace `/api/workspace`
 
-### Config `/api/config`
+Manages workspace lifecycle, file system browsing, and agent session persistence.
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/:filename` | Read a JSON config file from `configDir` |
-| `PUT` | `/:filename` | Write JSON to `configDir` (auto-creates directory) |
+#### `GET /api/workspace/roots`
+
+Get system root directories.
+
+**Response** `200`
+
+```json
+[
+  { "name": "C:\\", "path": "C:/", "isDirectory": true },
+  { "name": "D:\\", "path": "D:/", "isDirectory": true }
+]
+```
+
+Linux/macOS returns `[{ "name": "/", "path": "/", "isDirectory": true }]`.
+
+---
+
+#### `GET /api/workspace/browse`
+
+Browse file system at an arbitrary path (no sandbox restrictions).
+
+| Parameter | Location | Type | Required | Default | Description |
+|-----------|----------|------|----------|---------|-------------|
+| `path` | query | `string` | No | Windows: `C:\`; Unix: `/` | Browse path |
+
+**Response** `200`
+
+```json
+{
+  "path": "D:/projects",
+  "parent": "D:/",
+  "entries": [
+    { "name": "my-app", "path": "D:/projects/my-app", "isDirectory": true, "size": 0, "modifiedAt": 1717430400000 },
+    { "name": "README.md", "path": "D:/projects/README.md", "isDirectory": false, "size": 512, "modifiedAt": 1717430400000 }
+  ]
+}
+```
+
+---
+
+#### `POST /api/workspace/open`
+
+Open or create a workspace. Creates `AgentRuntime`, reads/writes `.vibeeditor/workspace.json`, restores persisted agent sessions.
+
+**Request Body**
+
+```json
+{
+  "rootPath": "/path/to/project"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `rootPath` | `string` | Yes | Workspace root directory absolute path (must be an existing directory) |
+
+**Response** `200`: `WorkspaceData`
+
+```json
+{
+  "workspaceId": "ws_1717430400000_a1b2c3",
+  "rootPath": "D:/projects/my-app",
+  "rootName": "my-app",
+  "openTabs": [],
+  "createdAt": 1717430400000,
+  "lastOpenedAt": 1717430500000,
+  "agentSessions": []
+}
+```
+
+---
+
+#### `GET /api/workspace/info`
+
+Query workspace details.
+
+| Parameter | Location | Type | Required | Description |
+|-----------|----------|------|----------|-------------|
+| `workspaceId` | query | `string` | Yes | Workspace ID |
+
+**Response** `200`: `WorkspaceData`
+
+**Error** `404`: Workspace not found
+
+---
+
+#### `POST /api/workspace/update`
+
+Update workspace tab state (open file tabs and active tab).
+
+**Request Body**
+
+```json
+{
+  "workspaceId": "ws_1717430400000_a1b2c3",
+  "openTabs": [
+    { "path": "src/index.ts", "cursorLine": 10, "cursorColumn": 5 }
+  ],
+  "activeTabPath": "src/index.ts"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `workspaceId` | `string` | Yes | Workspace ID |
+| `openTabs` | `StoredTab[]?` | No | Open tab list |
+| `activeTabPath` | `string?` | No | Current active tab path |
+
+**Response** `200`
+
+```json
+{ "success": true }
+```
+
+---
+
+#### `POST /api/workspace/close`
+
+Close workspace. Persists workspace data, disposes Runtime and MCP connections, removes from memory.
+
+**Request Body**
+
+```json
+{
+  "workspaceId": "ws_1717430400000_a1b2c3"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `workspaceId` | `string` | Yes | Workspace ID |
+
+**Response** `200`
+
+```json
+{ "success": true }
+```
+
+---
+
+#### `GET /api/workspace/sessions`
+
+Get all agent sessions for a workspace.
+
+| Parameter | Location | Type | Required | Description |
+|-----------|----------|------|----------|-------------|
+| `workspaceId` | query | `string` | Yes | Workspace ID |
+
+**Response** `200`
+
+```json
+{
+  "sessions": [
+    {
+      "id": "session_123",
+      "name": "Create Express Server",
+      "nameAutoGenerated": true,
+      "createdAt": 1717430400000,
+      "lastMessageAt": 1717430500000,
+      "messages": [
+        {
+          "id": "msg_1",
+          "role": "user",
+          "content": "Help me create an Express server",
+          "timestamp": 1717430400000
+        },
+        {
+          "id": "msg_2",
+          "role": "agent",
+          "content": "Sure, let me help you...",
+          "timestamp": 1717430500000,
+          "agentId": "agent_123"
+        }
+      ]
+    }
+  ]
+}
+```
+
+---
+
+#### `POST /api/workspace/sessions`
+
+Save or update a single agent session in workspace data (immediately written to disk).
+
+**Request Body**
+
+```json
+{
+  "workspaceId": "ws_1717430400000_a1b2c3",
+  "session": {
+    "id": "session_123",
+    "name": "Create Express Server",
+    "nameAutoGenerated": true,
+    "createdAt": 1717430400000,
+    "lastMessageAt": 1717430500000,
+    "messages": [
+      { "id": "msg_1", "role": "user", "content": "Help me create an Express server", "timestamp": 1717430400000 }
+    ]
+  }
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `workspaceId` | `string` | Yes | Workspace ID |
+| `session` | `WorkspaceAgentSession` | Yes | Session data |
+
+**Response** `200`
+
+```json
+{ "success": true }
+```
+
+---
+
+#### `DELETE /api/workspace/sessions/:sessionId`
+
+Delete a single agent session from workspace data.
+
+| Parameter | Location | Type | Required | Description |
+|-----------|----------|------|----------|-------------|
+| `workspaceId` | query | `string` | Yes | Workspace ID |
+| `sessionId` | path | `string` | Yes | Session ID |
+
+**Response** `200`
+
+```json
+{ "success": true }
+```
+
+---
+
+### 5. LLM Providers `/api/llm`
+
+Manage LLM provider configurations (persisted to `config/llm-settings.json`).
+
+#### `GET /api/llm/providers`
+
+List all providers and the current active provider.
+
+**Response** `200`
+
+```json
+{
+  "providers": [
+    {
+      "id": "llm_1717430400000_0",
+      "name": "DeepSeek",
+      "apiUrl": "https://api.deepseek.com/v1",
+      "apiKey": "sk-****",
+      "model": "deepseek-chat",
+      "enabled": true
+    }
+  ],
+  "activeProviderId": "llm_1717430400000_0"
+}
+```
+
+---
+
+#### `POST /api/llm/providers`
+
+Add an LLM provider.
+
+**Request Body**
+
+```json
+{
+  "name": "DeepSeek",
+  "apiUrl": "https://api.deepseek.com/v1",
+  "apiKey": "sk-xxx",
+  "model": "deepseek-chat",
+  "enabled": true
+}
+```
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `apiUrl` | `string` | Yes | — | API URL |
+| `name` | `string` | No | `"Unnamed"` | Display name |
+| `apiKey` | `string` | No | `""` | API Key |
+| `model` | `string` | No | `""` | Default model |
+| `enabled` | `boolean` | No | `true` | Whether enabled |
+
+**Response** `201`: `LLMProvider`
+
+```json
+{
+  "id": "llm_1717430400000_0",
+  "name": "DeepSeek",
+  "apiUrl": "https://api.deepseek.com/v1",
+  "apiKey": "sk-xxx",
+  "model": "deepseek-chat",
+  "enabled": true
+}
+```
+
+---
+
+#### `PUT /api/llm/providers/:id`
+
+Update provider configuration.
+
+| Parameter | Location | Type | Required | Description |
+|-----------|----------|------|----------|-------------|
+| `id` | path | `string` | Yes | Provider ID |
+
+**Request Body**: Partial `LLMProvider` fields
+
+```json
+{
+  "name": "New Name",
+  "model": "deepseek-v3",
+  "enabled": false
+}
+```
+
+**Response** `200`: Updated `LLMProvider`
+
+**Error** `404`: Provider not found
+
+---
+
+#### `DELETE /api/llm/providers/:id`
+
+Delete a provider.
+
+| Parameter | Location | Type | Required | Description |
+|-----------|----------|------|----------|-------------|
+| `id` | path | `string` | Yes | Provider ID |
+
+**Response** `200`
+
+```json
+{ "success": true }
+```
+
+**Error** `404`: Provider not found
+
+---
+
+#### `POST /api/llm/providers/:id/set-active`
+
+Set the active (default) provider.
+
+| Parameter | Location | Type | Required | Description |
+|-----------|----------|------|----------|-------------|
+| `id` | path | `string` | Yes | Provider ID |
+
+**Response** `200`
+
+```json
+{ "success": true }
+```
+
+**Error** `404`: Provider not found
+
+---
+
+#### `POST /api/llm/providers/:id/test`
+
+Test provider connectivity and retrieve available models. Tries OpenAI-compatible API (`/models`) first; falls back to Ollama API (`/api/tags`).
+
+| Parameter | Location | Type | Required | Description |
+|-----------|----------|------|----------|-------------|
+| `id` | path | `string` | Yes | Provider ID |
+
+**Request Body** (optional, for temporarily overriding stored credentials)
+
+```json
+{
+  "apiUrl": "https://custom-api.example.com/v1",
+  "apiKey": "sk-override-key"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `apiUrl` | `string?` | No | Override API URL |
+| `apiKey` | `string?` | No | Override API Key |
+
+**Success Response** `200`
+
+```json
+{
+  "success": true,
+  "models": ["deepseek-chat", "deepseek-coder", "deepseek-v3"]
+}
+```
+
+**Failure Response** `200`
+
+```json
+{
+  "success": false,
+  "error": "Unable to connect or fetch models"
+}
+```
+
+**Error** `404`: Provider not found
+
+---
+
+### 6. MCP Servers `/api/mcp`
+
+Manage MCP (Model Context Protocol) server configurations (persisted to `config/mcp-settings.json`).
+
+#### `GET /api/mcp/servers`
+
+List all MCP servers.
+
+**Response** `200`: `McpServerEntry[]`
+
+```json
+[
+  {
+    "id": "mcp_1717430400000_0",
+    "name": "ip2region",
+    "description": "IP address lookup service",
+    "enabled": true,
+    "config": {
+      "type": "http",
+      "url": "https://mcp.ifconfig.cc",
+      "name": "ip2region"
+    }
+  }
+]
+```
+
+---
+
+#### `POST /api/mcp/servers`
+
+Add an MCP server.
+
+**Request Body**
+
+```json
+{
+  "name": "My MCP Server",
+  "description": "File search service",
+  "enabled": true,
+  "config": {
+    "type": "stdio",
+    "command": "npx",
+    "args": ["-y", "@anthropic/mcp-server-filesystem", "/path/to/allowed"],
+    "env": {},
+    "cwd": "/working/dir"
+  }
+}
+```
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `config` | `McpServerConfig` | Yes | — | Connection config (must include `type` field) |
+| `name` | `string` | No | config.name or id | Display name |
+| `description` | `string?` | No | — | Description |
+| `enabled` | `boolean` | No | `true` | Whether enabled |
+
+`config.type` must be one of `stdio`, `sse`, `http`.
+
+**Stdio mode** additional fields:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `command` | `string` | Executable path |
+| `args` | `string[]?` | Command arguments |
+| `env` | `Record<string, string>?` | Environment variables |
+| `cwd` | `string?` | Working directory |
+
+**SSE / HTTP mode** additional fields:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `url` | `string` | MCP server URL |
+| `headers` | `Record<string, string>?` | Custom request headers |
+| `sessionId` | `string?` | SSE session ID |
+
+**Response** `201`: `McpServerEntry`
+
+```json
+{
+  "id": "mcp_1717430400000_1",
+  "name": "My MCP Server",
+  "description": "File search service",
+  "enabled": true,
+  "config": {
+    "type": "stdio",
+    "command": "npx",
+    "args": ["-y", "@anthropic/mcp-server-filesystem", "/path/to/allowed"]
+  }
+}
+```
+
+---
+
+#### `PUT /api/mcp/servers/:id`
+
+Update an MCP server.
+
+| Parameter | Location | Type | Required | Description |
+|-----------|----------|------|----------|-------------|
+| `id` | path | `string` | Yes | Server ID |
+
+**Request Body**: Partial field update
+
+```json
+{
+  "name": "Updated Name",
+  "description": "Updated description",
+  "enabled": false,
+  "config": {
+    "type": "http",
+    "url": "https://new-mcp.example.com"
+  }
+}
+```
+
+**Response** `200`: Updated `McpServerEntry`
+
+**Error** `404`: Server not found
+
+---
+
+#### `DELETE /api/mcp/servers/:id`
+
+Delete an MCP server.
+
+| Parameter | Location | Type | Required | Description |
+|-----------|----------|------|----------|-------------|
+| `id` | path | `string` | Yes | Server ID |
+
+**Response** `200`
+
+```json
+{ "success": true }
+```
+
+**Error** `404`: Server not found
+
+---
+
+#### `POST /api/mcp/servers/:id/test`
+
+Test MCP server connectivity. Creates a temporary `McpManager`, connects, collects tools, then disconnects.
+
+| Parameter | Location | Type | Required | Description |
+|-----------|----------|------|----------|-------------|
+| `id` | path | `string` | Yes | Server ID |
+
+**Success Response** `200`
+
+```json
+{
+  "success": true,
+  "serverName": "ip2region",
+  "serverType": "http",
+  "tools": [
+    { "name": "lookup_ip", "description": "Look up IP address info", "inputSchema": { "type": "object", "properties": { "ip": { "type": "string" } } } }
+  ]
+}
+```
+
+**Failure Response** `200`
+
+```json
+{
+  "success": false,
+  "error": "Connection refused"
+}
+```
+
+**Error** `404`: Server not found
+
+---
+
+#### `POST /api/mcp/servers/:id/tools`
+
+Query available tools from an MCP server (temporary connection).
+
+| Parameter | Location | Type | Required | Description |
+|-----------|----------|------|----------|-------------|
+| `id` | path | `string` | Yes | Server ID |
+
+**Response** `200`
+
+```json
+{
+  "tools": [
+    { "name": "lookup_ip", "description": "Look up IP address info", "inputSchema": { ... } }
+  ]
+}
+```
+
+**Error** `404`: Server not found
+
+---
+
+### 7. Config `/api/config`
+
+Read/write generic JSON config files under `configDir`. Filenames auto-append `.json` and are protected against path traversal.
+
+#### `GET /api/config/:filename`
+
+Read a config file.
+
+| Parameter | Location | Type | Required | Description |
+|-----------|----------|------|----------|-------------|
+| `filename` | path | `string` | Yes | Filename (`.json` suffix auto-appended) |
+
+**Response** `200`: Parsed JSON content of the file
+
+**Error** `403`: Invalid config path
+**Error** `404`: Config file not found
+
+---
+
+#### `PUT /api/config/:filename`
+
+Write a config file.
+
+| Parameter | Location | Type | Required | Description |
+|-----------|----------|------|----------|-------------|
+| `filename` | path | `string` | Yes | Filename (`.json` suffix auto-appended) |
+
+**Request Body**: Any JSON-serializable value
+
+**Response** `200`
+
+```json
+{ "success": true }
+```
+
+**Error** `403`: Invalid config path
+
+---
+
+## SSE Streaming Protocol
+
+`POST /api/agent/stream` is the sole SSE endpoint.
+
+### Connection Establishment
+
+1. Client sends POST request with JSON Content-Type
+2. Server sets SSE response headers and immediately calls `flushHeaders()`
+3. If MCP servers are configured (`build` mode), sends MCP initialization status first
+
+### Event Stream
+
+```
+: heartbeat                          ← Keep-alive comment sent after 15s idle
+
+data: {"tool_start":"🔌 MCP: 1 server(s), 3 tool(s)"}\n\n
+
+data: {"thinking":"Analyzing user requirements..."}\n\n
+
+data: {"tool_start":"🔍 read_file: src/index.ts"}\n\n
+
+data: {"tool_end":"read_file complete"}\n\n
+
+data: {"tool_result":{"name":"read_file","content":"import express..."}}\n\n
+
+data: {"chunk":"Based"}\n\n
+data: {"chunk":" on your"}\n\n
+data: {"chunk":" code,"}\n\n
+
+data: {"done":true,"edits":[{"path":"src/app.ts","operation":"create","content":"..."}],"toolCalls":1}\n\n
+```
+
+### Client Integration Example
+
+```typescript
+const response = await fetch('http://localhost:20385/api/agent/stream', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    message: 'Help me optimize this code',
+    config: { mode: 'build' },
+    workspaceId: 'ws_xxx'
+  })
+});
+
+const reader = response.body!.getReader();
+const decoder = new TextDecoder();
+let buffer = '';
+
+while (true) {
+  const { done, value } = await reader.read();
+  if (done) break;
+
+  buffer += decoder.decode(value, { stream: true });
+  const lines = buffer.split('\n');
+  buffer = lines.pop() || '';
+
+  for (const line of lines) {
+    if (line.startsWith('data: ')) {
+      const event = JSON.parse(line.slice(6));
+      // Handle event...
+    }
+  }
+}
+```
+
+### Event Handling Reference
+
+| Event | Handling |
+|-------|----------|
+| `chunk` | Append to output area, display in real-time |
+| `thinking` | Display in thinking panel (collapsible) |
+| `tool_start` | Show progress in tool call panel |
+| `tool_end` | Mark tool call as complete |
+| `tool_result` | Display tool execution result |
+| `done` | Stream ends; `edits` array contains applicable edit suggestions; `toolCalls` is the total tool call count |
+| `error` | Display error message; a `done` event will follow |
+| `: heartbeat` | Ignore (SSE comment) |
+
+---
+
+## Middleware
+
+### CORS
+
+- Origin: `config.corsOrigin ?? '*'`
+- Allowed methods: `GET, POST, PUT, DELETE, OPTIONS`
+
+### JSON Parsing
+
+- `express.json({ limit: '50mb' })` — supports large file read requests
+
+### Request Logger (requestLoggerMiddleware)
+
+- Auto-generates `requestId` (prefers `X-Request-Id` request header)
+- Echoes back via `X-Request-Id` response header
+- Log levels by status: 2xx/3xx → info, 4xx → warn, 5xx → error
+- Skips `/api/health` path
+
+### Static File Serving
+
+- Only active when `SERVE_STATIC` env var is set
+- SPA routing fallback: all non-API paths return `index.html`
+
+### Authentication Middleware
+
+- `middleware/auth.ts` implements Bearer token validation
+- **Not imported in `index.ts`** — setting `AUTH_TOKEN` has no effect
+- To enable, manually wire it in `createApp()`
+
+---
 
 ## Dependencies
 
 | Package | Purpose |
 |---------|---------|
-| `@vibeeditor/agent` | Agent Provider, Session, MCP Manager |
+| `@vibeeditor/agent` | Agent Provider, Session, MCP Manager, LLM Gateway |
 | `@vibeeditor/core` | `LocalFileSystem`, `FileEntry` types |
 | `express` | HTTP framework |
 | `cors` | Cross-origin support |
 
 ## Notes
 
-- `middleware/auth.ts` implements Bearer token authentication but is **not imported in `index.ts`** — setting `AUTH_TOKEN` env var has no effect without manual wiring.
-- `run.ts` is the actual entry point, reading the root `app-config.json` for port and config directory.
-- `createApp()` and `startServer()` are exported as public APIs for use as a library.
+- **`run.ts` is the actual entry point**, reading root `app-config.json` for port and config directory; `createApp()` / `startServer()` can also be imported as a library.
+- **Path security**: `/api/files/*` all protected against directory traversal; `/api/config/*` likewise protected; `/api/workspace/browse` has no sandbox — future versions may add configurable restrictions.
+- **Runtime caching**: Using the `workspaceId` parameter reuses `AgentRuntime` (including MCP connections) across multiple requests, avoiding repeated initialization overhead.
+- **Agent session persistence**: Agent conversation history is persisted alongside workspace data in `.vibeeditor/workspace.json` and can be restored on reopen.
+- **MCP config hot reload**: `/api/agent/stream` and `/api/agent/chat` reload MCP config from disk when `workspaceId` is present, so newly added/enabled servers take effect immediately.
