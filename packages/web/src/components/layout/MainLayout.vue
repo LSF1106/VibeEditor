@@ -10,6 +10,7 @@
     <Toolbar
       :env="fs.env"
       :workspace-mode="store.workspaceMode"
+      :is-single-file="store.isSingleFile"
       @open-folder="handleOpenFolder"
       @open-file="handleOpenFile"
       @save="fs.saveCurrentFile"
@@ -28,6 +29,7 @@
     />
     <div ref="mainContentRef" class="main-content">
       <ActivityBar
+        v-if="!store.isSingleFile"
         :items="topActivityItems"
         :bottom-items="bottomActivityItems"
         :active-id="activeActivity"
@@ -37,7 +39,7 @@
           <SettingDropdown />
         </template>
       </ActivityBar>
-      <div v-if="!sidebarCollapsed" class="sidebar" :style="{ width: sidebarWidth + 'px' }">
+      <div v-if="!store.isSingleFile && !sidebarCollapsed" class="sidebar" :style="{ width: sidebarWidth + 'px' }">
         <template v-if="activeActivity === 'explorer'">
           <SideBar
             :title="activeActivityTitle"
@@ -101,9 +103,10 @@
           />
         </template>
       </div>
-      <div v-if="!sidebarCollapsed" class="resize-handle" @mousedown="startSidebarResize"></div>
+      <div v-if="!store.isSingleFile && !sidebarCollapsed" class="resize-handle" @mousedown="startSidebarResize"></div>
       <div class="editor-area">
         <n-tabs
+          v-if="!store.isSingleFile"
           v-model:value="activeTabValue"
           type="card"
           closable
@@ -217,6 +220,26 @@
       @cancel="onSaveDialogCancel"
     />
     <AboutDialog :visible="showAboutDialog" @close="showAboutDialog = false" />
+    <n-modal
+      v-model:show="showWorkspaceDialog"
+      preset="card"
+      :title="$t('workspaceDialog.title')"
+      style="width: 520px"
+      @after-leave="onWorkspaceDialogCancel"
+    >
+      <n-text depth="3" class="ws-dialog-path">
+        {{ $t('workspaceDialog.pathLabel') }}: {{ workspaceDialogPath }}
+      </n-text>
+      <template #footer>
+        <n-button @click="onWorkspaceDialogCancel">{{ $t('workspaceDialog.cancel') }}</n-button>
+        <n-button @click="onWorkspaceDialogCurrent">
+          {{ fs.env === 'electron' ? $t('workspaceDialog.currentWindow') : $t('workspaceDialog.currentTab') }}
+        </n-button>
+        <n-button type="primary" @click="onWorkspaceDialogNew">
+          {{ fs.env === 'electron' ? $t('workspaceDialog.newWindow') : $t('workspaceDialog.newTab') }}
+        </n-button>
+      </template>
+    </n-modal>
     <OpenFolderDialog
       v-if="showOpenFolderDialog"
       @confirm="onOpenFolderConfirm"
@@ -254,7 +277,7 @@
 <script setup lang="ts">
 import { ref, reactive, watch, computed, onMounted, onUnmounted, nextTick } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { NTabs, NTabPane, NIcon, NButton } from 'naive-ui';
+import { NTabs, NTabPane, NIcon, NButton, NModal, NText } from 'naive-ui';
 import { useEditorStore } from '../../stores/editor';
 import { useFileSystem } from '../../composables/useFileSystem';
 import { getEditorInstance } from '../../services/editorInstance';
@@ -492,6 +515,12 @@ const saveDialogDefaultName = ref('');
 const showAboutDialog = ref(false);
 let saveDialogResolver: ((value: string | null) => void) | null = null;
 
+// ===== 工作区打开确认弹窗 =====
+const showWorkspaceDialog = ref(false);
+const workspaceDialogPath = ref('');
+const workspaceDialogIsFile = ref(false);
+let workspaceDialogResolver: ((choice: 'new' | 'current' | 'cancel') => void) | null = null;
+
 // ===== 打开文件/文件夹对话框状态 =====
 const showOpenFolderDialog = ref(false);
 const showOpenFileDialog = ref(false);
@@ -510,7 +539,7 @@ function normalizePathForDedup(p: string): string {
 function updateWorkspacePaths() {
   currentWorkspacePaths.value = store.workspaceRoots.map(r => normalizePathForDedup(r.path));
   if (bcChannel) {
-    bcChannel.postMessage({ type: 'UPDATE', paths: currentWorkspacePaths.value });
+    bcChannel.postMessage({ type: 'UPDATE', paths: [...currentWorkspacePaths.value] });
   }
 }
 
@@ -749,14 +778,25 @@ function clearDirState() {
   dirChildren.value = {};
 }
 
-/** 判断当前是否已有有效工作区（文件树已加载） */
 function hasExistingWorkspace(): boolean {
-  return store.workspaceRoots.length > 0 && store.fileTreeNodes.length > 0;
+  return store.workspaceRoots.length > 0;
 }
 
-/** 在新上下文（新 tab / 新窗口）中打开文件夹 */
-async function openFolderInNewContext() {
-  const path = await fs.resolveFolderPath();
+function showWorkspaceConfirmDialog(path: string, isFile: boolean): Promise<'new' | 'current' | 'cancel'> {
+  workspaceDialogPath.value = path;
+  workspaceDialogIsFile.value = isFile;
+  showWorkspaceDialog.value = true;
+  return new Promise(resolve => { workspaceDialogResolver = resolve; });
+}
+function onWorkspaceDialogNew() { showWorkspaceDialog.value = false; workspaceDialogResolver?.('new'); }
+function onWorkspaceDialogCurrent() { showWorkspaceDialog.value = false; workspaceDialogResolver?.('current'); }
+function onWorkspaceDialogCancel() {
+  showWorkspaceDialog.value = false;
+  workspaceDialogResolver?.('cancel');
+}
+
+async function openFolderInNewContext(existingPath?: string) {
+  const path = existingPath || await fs.resolveFolderPath();
   if (!path) return;
 
   if (fs.env === 'electron') {
@@ -777,14 +817,13 @@ async function openFolderInNewContext() {
   }
 }
 
-/** 在新上下文（新 tab / 新窗口）中打开文件 */
-async function openFileInNewContext() {
-  const path = await fs.resolveFilePath();
+async function openFileInNewContext(existingPath?: string) {
+  const path = existingPath || await fs.resolveFilePath();
   if (!path) return;
 
   if (fs.env === 'electron') {
     if (window.electronAPI?.createWindow) {
-      const result = await window.electronAPI.createWindow(path);
+      const result = await window.electronAPI.createWindow(path, true);
       if (result?.status === 'duplicate') {
         if (window.electronAPI.showNotification) {
           window.electronAPI.showNotification('Workspace Already Open', `"${path}" is already open in another window.`);
@@ -796,7 +835,7 @@ async function openFileInNewContext() {
       alert(`Workspace "${path}" is already open in another tab.`);
       return;
     }
-    window.open(window.location.origin + '?workspace=' + encodeURIComponent(path), '_blank');
+    window.open(window.location.origin + '?file=' + encodeURIComponent(path), '_blank');
   }
 }
 
@@ -804,7 +843,11 @@ async function openFileInNewContext() {
 async function handleOpenFolder() {
   clearDirState();
   if (hasExistingWorkspace()) {
-    await openFolderInNewContext();
+    const path = await fs.resolveFolderPath();
+    if (!path) return;
+    const choice = await showWorkspaceConfirmDialog(path, false);
+    if (choice === 'new') await openFolderInNewContext(path);
+    else if (choice === 'current') await fs.openFolderDialog();
   } else {
     await fs.openFolderDialog();
   }
@@ -814,7 +857,11 @@ async function handleOpenFolder() {
 async function handleOpenFile() {
   clearDirState();
   if (hasExistingWorkspace()) {
-    await openFileInNewContext();
+    const path = await fs.resolveFilePath();
+    if (!path) return;
+    const choice = await showWorkspaceConfirmDialog(path, true);
+    if (choice === 'new') await openFileInNewContext(path);
+    else if (choice === 'current') await fs.openFileDialog();
   } else {
     await fs.openFileDialog();
   }
@@ -945,7 +992,20 @@ onMounted(async () => {
       await fs.openWorkspaceViaPath(decodedPath);
       updateWorkspacePaths();
     } catch (e: any) {
+      console.error('[VibeEditor] Failed to open workspace via URL param:', e);
       fs.error = `Failed to open workspace: ${e instanceof Error ? e.message : String(e)}`;
+    }
+  }
+  const fileParam = urlParams.get('file');
+  if (fileParam) {
+    const decodedPath = decodeURIComponent(fileParam);
+    clearDirState();
+    try {
+      await fs.openFileAsLightweightWorkspace(decodedPath);
+      updateWorkspacePaths();
+    } catch (e: any) {
+      console.error('[VibeEditor] Failed to open file via URL param:', e);
+      fs.error = `Failed to open file: ${e instanceof Error ? e.message : String(e)}`;
     }
   }
 });
@@ -1275,5 +1335,12 @@ async function handleApplyEdits(edits: ParsedEdit[]) {
 .resize-sw {
   bottom: 0; left: 0; width: 8px; height: 8px;
   cursor: nesw-resize;
+}
+.ws-dialog-path {
+  display: block;
+  padding: 10px 0;
+  word-break: break-all;
+  font-family: monospace;
+  font-size: 13px;
 }
 </style>

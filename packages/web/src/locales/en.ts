@@ -89,6 +89,15 @@ export default {
     invalidFolderName: 'Folder name contains invalid characters',
     emptyFolderName: 'Folder name cannot be empty',
   },
+  workspaceDialog: {
+    title: 'Open Workspace',
+    pathLabel: 'Path',
+    newWindow: 'Open in New Window',
+    newTab: 'Open in New Tab',
+    currentWindow: 'Open in Current Window',
+    currentTab: 'Open in Current Tab',
+    cancel: 'Cancel',
+  },
   dragOverlay: {
     title: 'Drop folder to open',
     subtitle: 'Release anywhere in VibeEditor',
@@ -230,6 +239,7 @@ export default {
     folderName: 'Folder name:',
     saveDocument: 'Cannot save document previews',
     dropNotSupported: 'Drag & drop is not supported in server mode. Use "Open File" or "Open Folder" instead.',
+    singleFileWorkspaceFailed: 'Failed to create single-file workspace',
   },
   errors: {
     fileNotFound: 'File not found:',

@@ -180,7 +180,7 @@ function buildMenu(): Electron.MenuItemConstructorOptions[] {
   ];
 }
 
-function getLoadURL(workspacePath?: string): string {
+function getLoadURL(workspacePath?: string, isFile?: boolean): string {
   let baseURL: string;
   if (process.env.VITE_DEV_SERVER_URL) {
     baseURL = process.env.VITE_DEV_SERVER_URL;
@@ -190,7 +190,8 @@ function getLoadURL(workspacePath?: string): string {
     baseURL = 'vibe://app/index.html';
   }
   if (workspacePath) {
-    return `${baseURL}?workspace=${encodeURIComponent(workspacePath)}`;
+    const param = isFile ? 'file' : 'workspace';
+    return `${baseURL}?${param}=${encodeURIComponent(workspacePath)}`;
   }
   return baseURL;
 }
@@ -201,7 +202,7 @@ function toggleDevTools(win: BrowserWindow) {
   }
 }
 
-function createWindow(workspacePath?: string) {
+function createWindow(workspacePath?: string, isFile?: boolean) {
   const win = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -218,24 +219,24 @@ function createWindow(workspacePath?: string) {
       sandbox: false,
     },
   });
+  const wcId = win.webContents.id;
 
-  win.loadURL(getLoadURL(workspacePath));
+  win.loadURL(getLoadURL(workspacePath, isFile));
   toggleDevTools(win);
 
   win.on('maximize', () => win.webContents.send('window:maximizeChange', true));
   win.on('unmaximize', () => win.webContents.send('window:maximizeChange', false));
 
   win.on('closed', () => {
-    const id = win.webContents.id;
-    openWindows.delete(id);
-    clearWindowRoot(id);
+    openWindows.delete(wcId);
+    clearWindowRoot(wcId);
     if (mainWindow === win) {
       mainWindow = null;
     }
   });
 
   if (workspacePath) {
-    openWindows.set(win.webContents.id, { window: win, workspacePath });
+    openWindows.set(wcId, { window: win, workspacePath });
   }
 
   return win;
@@ -271,19 +272,21 @@ app.whenReady().then(() => {
     win.setBounds({ x, y, width: newW, height: newH });
   });
 
-  ipcMain.handle('window:create', async (_event, workspacePath: string) => {
+  ipcMain.handle('window:create', async (_event, workspacePath: string, isFile?: boolean) => {
     const normalizedPath = workspacePath.replace(/\\/g, '/').toLowerCase();
     for (const [id, entry] of openWindows) {
       if (entry.workspacePath.replace(/\\/g, '/').toLowerCase() === normalizedPath) {
-        const win = BrowserWindow.fromWebContents({ id } as Electron.WebContents);
-        if (win) {
+        const win = entry.window;
+        if (win && !win.isDestroyed()) {
           if (win.isMinimized()) win.restore();
           win.focus();
+        } else {
+          openWindows.delete(id);
         }
         return { status: 'duplicate' };
       }
     }
-    const win = createWindow(workspacePath);
+    const win = createWindow(workspacePath, isFile);
     return { status: 'created' };
   });
 

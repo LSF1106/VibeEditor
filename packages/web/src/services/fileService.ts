@@ -33,7 +33,7 @@ export interface FileServiceClient {
   saveFileAs?(path: string, content: string): Promise<string | null>;
   browseFilesystem(path: string): Promise<{ path: string; parent: string; entries: FileEntry[] }>;
   getWorkspaceRoots(): Promise<FileEntry[]>;
-  openWorkspace(rootPath: string, providerConfig?: Record<string, unknown>): Promise<WorkspaceInfo>;
+  openWorkspace(rootPath: string, providerConfig?: Record<string, unknown>, lightweight?: boolean): Promise<WorkspaceInfo>;
   closeWorkspace(workspaceId: string): Promise<void>;
   updateWorkspace(workspaceId: string, data: { openTabs?: StoredTabInfo[]; activeTabPath?: string }): Promise<void>;
   getWorkspaceSessions(workspaceId: string): Promise<WorkspaceAgentSession[]>;
@@ -121,7 +121,7 @@ export function createElectronClient(): FileServiceClient {
     saveFileAs: (path, content) => api.saveFile(path, content),
     browseFilesystem: async () => ({ path: '/', parent: '/', entries: [] }),
     getWorkspaceRoots: async () => [],
-    openWorkspace: async (rootPath) => ({
+    openWorkspace: async (rootPath, _providerConfig, _lightweight) => ({
       workspaceId: `ws_${Date.now()}`,
       rootPath,
       rootName: rootPath.split(/[\\/]/).pop() || rootPath,
@@ -216,10 +216,10 @@ export function createServerClient(baseUrl = ''): FileServiceClient {
     },
     browseFilesystem: (path) => request(`/api/workspace/browse?path=${encodeURIComponent(path)}`),
     getWorkspaceRoots: () => request('/api/workspace/roots'),
-    openWorkspace: async (rootPath, providerConfig) => {
+    openWorkspace: async (rootPath, providerConfig, lightweight) => {
       return request('/api/workspace/open', {
         method: 'POST',
-        body: JSON.stringify({ rootPath, providerConfig }),
+        body: JSON.stringify({ rootPath, providerConfig, lightweight }),
       });
     },
     closeWorkspace: async (workspaceId) => {

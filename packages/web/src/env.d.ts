@@ -41,7 +41,7 @@ interface Window {
     getBounds: () => Promise<{ x: number; y: number; width: number; height: number } | null>;
     resizeWindow: (x: number, y: number, w: number, h: number) => Promise<void>;
     onMaximizeChange: (callback: (isMaximized: boolean) => void) => void;
-    createWindow: (workspacePath: string) => Promise<{ status: 'created' } | { status: 'duplicate' }>;
+    createWindow: (workspacePath: string, isFile?: boolean) => Promise<{ status: 'created' } | { status: 'duplicate' }>;
     showNotification: (title: string, body: string) => Promise<void>;
     registerWorkspace: (workspacePath: string) => Promise<void>;
   };

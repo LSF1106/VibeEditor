@@ -2,6 +2,7 @@
   <div class="toolbar" @dblclick="handleToolbarDblClick">
     <div class="toolbar-left">
       <n-button
+        v-if="!isSingleFile"
         quaternary
         size="small"
         :title="sidebarCollapsed ? $t('toolbar.showSidebar') : $t('toolbar.hideSidebar')"
@@ -29,7 +30,8 @@
       </n-dropdown>
     </div>
     <div class="toolbar-center">
-      <span class="toolbar-title">{{ $t('toolbar.appName') }}</span>
+      <span v-if="isSingleFile && activeTabName" class="toolbar-title">{{ activeTabName }}</span>
+      <span v-else class="toolbar-title">{{ $t('toolbar.appName') }}</span>
     </div>
     <div class="toolbar-right">
       <n-tag v-if="workspaceMode" size="small" :bordered="false" class="toolbar-badge">
@@ -64,12 +66,15 @@ import { computed, ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { NButton, NIcon, NDropdown, NTag } from 'naive-ui'
 import { MenuOutline, ChevronDown } from '@vicons/ionicons5'
-import type { WorkspaceMode } from '../../stores/editor'
+import { useEditorStore, type WorkspaceMode } from '../../stores/editor'
+
+const store = useEditorStore()
 
 const props = defineProps<{
   env: string
   workspaceMode: WorkspaceMode
   sidebarCollapsed?: boolean
+  isSingleFile?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -91,15 +96,27 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 
-const fileOptions = computed(() => [
-  { label: t('toolbar.newFile'), key: 'new-file' },
-  { label: t('toolbar.newFolder'), key: 'new-folder' },
-  { type: 'divider' as const },
-  { label: t('toolbar.openFolder'), key: 'open-folder' },
-  { label: t('toolbar.openFile'), key: 'open-file' },
-  { type: 'divider' as const },
-  { label: t('toolbar.save'), key: 'save' },
-])
+const activeTabName = computed(() => store.activeTab?.name || '')
+
+const fileOptions = computed(() => {
+  if (props.isSingleFile) {
+    return [
+      { label: t('toolbar.openFolder'), key: 'open-folder' },
+      { label: t('toolbar.openFile'), key: 'open-file' },
+      { type: 'divider' as const },
+      { label: t('toolbar.save'), key: 'save' },
+    ]
+  }
+  return [
+    { label: t('toolbar.newFile'), key: 'new-file' },
+    { label: t('toolbar.newFolder'), key: 'new-folder' },
+    { type: 'divider' as const },
+    { label: t('toolbar.openFolder'), key: 'open-folder' },
+    { label: t('toolbar.openFile'), key: 'open-file' },
+    { type: 'divider' as const },
+    { label: t('toolbar.save'), key: 'save' },
+  ]
+})
 
 const editOptions = computed(() => [
   { label: t('toolbar.cut'), key: 'edit-cut' },
