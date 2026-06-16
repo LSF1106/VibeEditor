@@ -16,7 +16,7 @@
         :node-props="nodeProps"
         :render-label="renderLabel"
         :render-prefix="renderPrefix"
-        :render-suffix="renderSuffix"
+
         :on-update:expanded-keys="handleExpandedKeysChange"
         class="tree-view"
       />
@@ -37,13 +37,12 @@
 <script setup lang="ts">
 import { computed, ref, watch, nextTick, h } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { NTree, NSpin, NEmpty, NInput, NIcon, NButton, NText } from 'naive-ui'
+import { NTree, NSpin, NEmpty, NInput, NIcon, NText } from 'naive-ui'
 import type { TreeOption } from 'naive-ui'
 import {
   FolderOutline,
   FolderOpenOutline,
   DocumentOutline,
-  TrashOutline,
 } from '@vicons/ionicons5'
 import type { WorkspaceMode } from '../../stores/editor'
 import NewFileTreeMenu from './NewFileTreeMenu.vue'
@@ -74,7 +73,6 @@ const props = defineProps<{
 const emit = defineEmits<{
   'select-file': [path: string]
   'expand-dir': [path: string]
-  'delete-file': [path: string]
   'confirm-rename': [oldPath: string, newName: string]
   'confirm-create': [parentPath: string, name: string, type: 'file' | 'folder']
   'cancel-create': []
@@ -181,28 +179,6 @@ function renderPrefix({ option }: { option: TreeOption }) {
   })
 }
 
-function renderSuffix({ option }: { option: TreeOption }) {
-  const key = option.key as string
-  if (key.startsWith('__create_') || option.isLeaf !== true) return null
-
-  return h(
-    NButton,
-    {
-      size: 'tiny',
-      text: true,
-      class: 'tree-delete-btn',
-      onClick: (e: MouseEvent) => {
-        e.stopPropagation()
-        e.preventDefault()
-        emit('delete-file', key)
-      },
-    },
-    {
-      default: () =>
-        h(NIcon, { size: 14 }, { default: () => h(TrashOutline) }),
-    },
-  )
-}
 
 function renderLabel({ option }: { option: TreeOption }) {
   const key = option.key as string

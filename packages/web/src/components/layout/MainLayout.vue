@@ -14,8 +14,8 @@
       @open-folder="handleOpenFolder"
       @open-file="handleOpenFile"
       @save="fs.saveCurrentFile"
-      @new-file="store.newUntitled"
-      @new-folder="fs.createFolder"
+      @new-file="handleNewFileAction"
+      @new-folder="handleNewFolderAction"
       @edit-cut="handleEditAction('cut')"
       @edit-copy="handleEditAction('copy')"
       @edit-paste="handleEditAction('paste')"
@@ -52,7 +52,6 @@
               :clipboard="fs.clipboard"
               @select-file="fs.openAndReadFile"
               @expand-dir="handleExpandDir"
-              @delete-file="fs.deleteFile"
               @menu-action="handleNewMenuAction"
               @confirm-rename="handleConfirmRename"
               @confirm-create="handleConfirmCreate"
@@ -72,7 +71,6 @@
               :creating-node-key="creatingNodeKey"
               @select-file="fs.openAndReadFile"
               @expand-dir="handleExpandDir"
-              @delete-file="fs.deleteFile"
               @contextmenu="handleContextMenu"
               @confirm-rename="handleConfirmRename"
               @confirm-create="handleConfirmCreate"
@@ -197,6 +195,29 @@
       @confirm="onSaveDialogConfirm"
       @cancel="onSaveDialogCancel"
     />
+    <n-modal
+      v-model:show="showSaveChoiceDialog"
+      preset="card"
+      :title="$t('saveChoice.title')"
+      style="width: 400px"
+      @after-leave="onSaveChoiceCancel"
+    >
+      <p style="text-align:center;margin-bottom:16px">{{ $t('saveChoice.description') }}</p>
+      <template #footer>
+        <n-button @click="onSaveChoiceCancel">{{ $t('saveChoice.cancel') }}</n-button>
+        <n-button @click="onSaveChoiceLocal">{{ $t('saveChoice.local') }}</n-button>
+        <n-button type="primary" @click="onSaveChoiceServer">{{ $t('saveChoice.server') }}</n-button>
+      </template>
+    </n-modal>
+    <NewItemDialog
+      v-if="showNewItemDialog"
+      :client="fs.client"
+      :type="newItemType"
+      :default-name="newItemDefaultName"
+      :workspace-root="store.workspaceRoot"
+      @confirm="onNewItemConfirm"
+      @cancel="onNewItemCancel"
+    />
     <AboutDialog :visible="showAboutDialog" @close="showAboutDialog = false" />
     <SettingsModal :visible="showSettingsModal" :initial-tab="initialSettingsTab" @close="showSettingsModal = false" />
     <SearchPopup :visible="showSearchPopup" :client="fs.client" @close="showSearchPopup = false" @open-file="handleSearchOpenFile" />
@@ -285,6 +306,7 @@ import McpSettingsPanel from '../mcp/McpSettingsPanel.vue';
 import RightToolbar from './RightToolbar.vue';
 import type { RightToolbarItem } from './RightToolbar.vue';
 import SaveDialog from '../SaveDialog.vue';
+import NewItemDialog from '../NewItemDialog.vue';
 import StatusBar from '../StatusBar.vue';
 import AboutDialog from './AboutDialog.vue';
 import SettingsModal from '../settings/SettingsModal.vue';
@@ -363,7 +385,11 @@ function handleNewMenuAction(action: string, payload: ContextMenuPayload) {
       renamingPath.value = payload.path;
       break;
     case 'delete':
-      fs.deleteFile(payload.path);
+      if (payload.type === 'folder') {
+        fs.deleteDir(payload.path);
+      } else {
+        fs.deleteFile(payload.path);
+      }
       break;
     case 'refresh':
       clearDirState();
@@ -455,6 +481,18 @@ const showSaveDialog = ref(false);
 const saveDialogDefaultName = ref('');
 const showAboutDialog = ref(false);
 let saveDialogResolver: ((value: string | null) => void) | null = null;
+
+// ===== 新建文件/文件夹对话框状态 =====
+const showNewItemDialog = ref(false);
+const newItemType = ref<'file' | 'folder'>('file');
+const newItemDefaultName = ref('untitled');
+let newItemResolver: ((value: string | null) => void) | null = null;
+
+// ===== 保存方式选择对话框状态（无工作区时） =====
+const showSaveChoiceDialog = ref(false);
+const saveChoiceFileName = ref('');
+const saveChoiceContent = ref('');
+let saveChoiceResolver: ((value: string | null) => void) | null = null;
 
 // ===== 工作区打开确认弹窗 =====
 const showWorkspaceDialog = ref(false);
@@ -570,9 +608,19 @@ function handleSearchOpenFile(path: string) {
 /** 注册到 useFileSystem 的"另存为"处理器（返回 Promise 等待用户选择路径） */
 function handleSaveFileAs(): Promise<string | null> {
   return new Promise((resolve) => {
-    saveDialogResolver = resolve;
-    saveDialogDefaultName.value = store.activeTab?.name || 'untitled';
-    showSaveDialog.value = true;
+    if (!store.workspaceRoot) {
+      // 无工作区：让用户选择本地下载还是服务器保存
+      const tab = store.activeTab;
+      saveChoiceFileName.value = tab?.name || 'untitled';
+      saveChoiceContent.value = tab?.content || '';
+      saveChoiceResolver = resolve;
+      showSaveChoiceDialog.value = true;
+    } else {
+      // 有工作区：直接走 SaveDialog
+      saveDialogResolver = resolve;
+      saveDialogDefaultName.value = store.activeTab?.name || 'untitled';
+      showSaveDialog.value = true;
+    }
   });
 }
 
@@ -586,6 +634,113 @@ function onSaveDialogCancel() {
   showSaveDialog.value = false;
   saveDialogResolver?.(null);
   saveDialogResolver = null;
+}
+
+// ===== 新建文件/文件夹弹窗处理 =====
+
+/** 触发新建文件对话框 */
+function handleNewFile(): Promise<string | null> {
+  return new Promise((resolve) => {
+    newItemResolver = resolve;
+    newItemType.value = 'file';
+    newItemDefaultName.value = 'untitled';
+    showNewItemDialog.value = true;
+  });
+}
+
+/** 触发新建文件夹对话框 */
+function handleNewFolder(): Promise<string | null> {
+  return new Promise((resolve) => {
+    newItemResolver = resolve;
+    newItemType.value = 'folder';
+    newItemDefaultName.value = 'new-folder';
+    showNewItemDialog.value = true;
+  });
+}
+
+/** Toolbar 按钮触发的新建文件 */
+function handleNewFileAction() {
+  handleNewFile();
+}
+
+/** Toolbar 按钮触发的新建文件夹 */
+function handleNewFolderAction() {
+  handleNewFolder();
+}
+
+/** 新建对话框确认：创建文件/文件夹并打开/刷新 */
+async function onNewItemConfirm(path: string) {
+  showNewItemDialog.value = false;
+  if (newItemType.value === 'file') {
+    try {
+      await fs.client.writeFile(path, '');
+      store.openFile(path, '');
+      handleAfterSave(path);
+    } catch (e: any) {
+      fs.error = e.message;
+    }
+  } else {
+    try {
+      await fs.client.createDir(path);
+      handleAfterSave(path);
+    } catch (e: any) {
+      fs.error = e.message;
+    }
+  }
+  newItemResolver?.(path);
+  newItemResolver = null;
+}
+
+/** 新建对话框取消 */
+function onNewItemCancel() {
+  showNewItemDialog.value = false;
+  newItemResolver?.(null);
+  newItemResolver = null;
+}
+
+// ===== 保存方式选择弹窗处理 =====
+
+/** 用户选择"下载到本地" */
+function onSaveChoiceLocal() {
+  showSaveChoiceDialog.value = false;
+  const name = saveChoiceFileName.value;
+  const content = saveChoiceContent.value;
+
+  // 触发浏览器下载（纯浏览器 API，不经过后端）
+  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+
+  // 清除脏标记，保持 isUntitled（下次保存仍弹选择框）
+  const tab = store.activeTab;
+  if (tab) store.saveTab(tab.id);
+
+  // 返回 null → saveCurrentFile 提前 return，不写服务器
+  saveChoiceResolver?.(null);
+  saveChoiceResolver = null;
+}
+
+/** 用户选择"保存到服务器" */
+function onSaveChoiceServer() {
+  showSaveChoiceDialog.value = false;
+  // 切换到 SaveDialog 流程（通过 fs.client.writeFile 写服务器）
+  saveDialogResolver = saveChoiceResolver;
+  saveDialogDefaultName.value = saveChoiceFileName.value;
+  showSaveDialog.value = true;
+  saveChoiceResolver = null;
+}
+
+/** 用户取消 */
+function onSaveChoiceCancel() {
+  showSaveChoiceDialog.value = false;
+  saveChoiceResolver?.(null);
+  saveChoiceResolver = null;
 }
 
 function handleOpenFolderDialog(): Promise<string | null> {
@@ -673,6 +828,7 @@ fs.setSaveAsHandler(handleSaveFileAs);
 fs.setOnAfterSave(handleAfterSave);
 fs.setOpenFolderDialogHandler(handleOpenFolderDialog);
 fs.setOpenFileDialogHandler(handleOpenFileDialog);
+fs.setNewFileHandler(handleNewFile);
 
 // 文件树节点数量变化时更新侧边栏计数
 watch(() => store.fileTreeNodes.length, (count) => {
@@ -913,10 +1069,10 @@ onMounted(async () => {
     window.electronAPI.onMenuAction((action: string) => {
       switch (action) {
         case 'new-file':
-          store.newUntitled();
+          handleNewFileAction();
           break;
         case 'new-folder':
-          fs.createFolder();
+          handleNewFolderAction();
           break;
         case 'open-folder':
           handleOpenFolder();

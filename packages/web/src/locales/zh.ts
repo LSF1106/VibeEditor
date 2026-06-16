@@ -146,6 +146,21 @@ export default {
     filenamePlaceholder: '文件名.ext',
     goUp: '..',
   },
+  newItemDialog: {
+    fileTitle: '新建文件',
+    folderTitle: '新建文件夹',
+    create: '创建',
+    cancel: '取消',
+    filePlaceholder: '文件名.ext',
+    folderPlaceholder: '文件夹名',
+  },
+  saveChoice: {
+    title: '保存文件到哪里？',
+    description: '请选择保存方式',
+    local: '下载到本地',
+    server: '保存到服务器',
+    cancel: '取消',
+  },
   searchPanel: {
     placeholder: '搜索文件...',
     searching: '搜索中...',

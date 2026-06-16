@@ -36,6 +36,7 @@ export function useFileSystem() {
   let onAfterSave: ((savePath: string) => void) | null = null;
   let openFolderDialogHandler: (() => Promise<string | null>) | null = null;
   let openFileDialogHandler: (() => Promise<string | null>) | null = null;
+  let newFileHandler: (() => Promise<string | null>) | null = null;
 
   const lastDeleted = ref<{ path: string; content: string } | null>(null);
   const showUndoNotification = ref(false);
@@ -55,6 +56,10 @@ export function useFileSystem() {
 
   function setOpenFileDialogHandler(handler: () => Promise<string | null>) {
     openFileDialogHandler = handler;
+  }
+
+  function setNewFileHandler(handler: () => Promise<string | null>) {
+    newFileHandler = handler;
   }
 
   if (env === 'browser' || env === 'server') {
@@ -282,6 +287,25 @@ export function useFileSystem() {
       }, 10000);
 
       onAfterSave?.(filePath);
+    } catch (e: any) {
+      error.value = e.message;
+    }
+  }
+
+  /** 删除目录（递归删除） */
+  async function deleteDir(dirPath: string) {
+    error.value = null;
+    try {
+      const client = getClient();
+      await client.deleteDir(dirPath);
+
+      // 关闭该目录下所有已打开文件的标签页
+      const openTabs = store.tabs.filter(t => t.path.startsWith(dirPath + '/') || t.path === dirPath);
+      for (const tab of openTabs) {
+        store.closeTab(tab.id);
+      }
+
+      onAfterSave?.(dirPath);
     } catch (e: any) {
       error.value = e.message;
     }
@@ -714,11 +738,15 @@ export function useFileSystem() {
       return;
     }
 
-    // Ctrl+N: 新建文件
+    // Ctrl+N: 新建文件（优先使用弹窗流程）
     if (ctrl && e.key === 'n') {
       if (!isInputFocused()) {
         e.preventDefault();
-        store.newUntitled();
+        if (newFileHandler) {
+          newFileHandler();
+        } else {
+          store.newUntitled();
+        }
       }
       return;
     }
@@ -827,6 +855,7 @@ export function useFileSystem() {
     resolveFilePath,
     persistWorkspaceState,
     deleteFile,
+    deleteDir,
     undoDelete,
     createFolder,
     createFileInDir,
@@ -843,5 +872,6 @@ export function useFileSystem() {
     setOnAfterSave,
     setOpenFolderDialogHandler,
     setOpenFileDialogHandler,
+    setNewFileHandler,
   };
 }

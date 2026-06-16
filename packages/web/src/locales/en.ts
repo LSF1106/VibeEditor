@@ -146,6 +146,21 @@ export default {
     filenamePlaceholder: 'filename.ext',
     goUp: '..',
   },
+  newItemDialog: {
+    fileTitle: 'New File',
+    folderTitle: 'New Folder',
+    create: 'Create',
+    cancel: 'Cancel',
+    filePlaceholder: 'filename.ext',
+    folderPlaceholder: 'Folder name',
+  },
+  saveChoice: {
+    title: 'Save File Where?',
+    description: 'Choose save location',
+    local: 'Download Locally',
+    server: 'Save to Server',
+    cancel: 'Cancel',
+  },
   searchPanel: {
     placeholder: 'Search files...',
     searching: 'Searching...',

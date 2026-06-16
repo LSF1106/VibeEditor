@@ -40,9 +40,6 @@
       <span v-else class="toolbar-title">{{ $t('toolbar.appName') }}</span>
     </div>
     <div class="toolbar-right">
-      <n-tag v-if="workspaceMode" size="small" :bordered="false" class="toolbar-badge">
-        {{ workspaceMode.toUpperCase() }}
-      </n-tag>
       <n-button
         quaternary
         size="small"
@@ -78,7 +75,7 @@
 <script setup lang="ts">
 import { computed, ref, onMounted, h } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { NButton, NIcon, NDropdown, NTag } from 'naive-ui'
+import { NButton, NIcon, NDropdown } from 'naive-ui'
 import {
   MenuOutline,
   ChevronDown,
@@ -264,9 +261,6 @@ function handleToolbarDblClick() {
   font-size: 11px;
   font-weight: 400;
   letter-spacing: 0.3px;
-}
-.toolbar-badge {
-  margin-right: 8px;
 }
 .dropdown-trigger-btn {
   font-size: 12px;
