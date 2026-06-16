@@ -1021,10 +1021,26 @@ async function handleDrop(e: DragEvent) {
   const dataTransfer = e.dataTransfer;
   resetDragState();
 
+  // 提取拖放的第一个路径
+  const dropped = Array.from(dataTransfer.files)
+    .map(f => (f as File & { path?: string }).path)
+    .filter((p): p is string => Boolean(p));
+  const firstPath = dropped[0];
+
+  // 已有工作区时弹出确认弹窗，让用户选择在当前窗口还是新窗口打开
+  if (firstPath && hasExistingWorkspace()) {
+    const choice = await showWorkspaceConfirmDialog(firstPath, false);
+    if (choice === 'new') {
+      await openFolderInNewContext(firstPath);
+      return;
+    }
+    if (choice === 'cancel') return;
+    // choice === 'current' 继续走原有流程
+  }
+
   const opened = await fs.openDroppedFolder(dataTransfer);
   if (!opened) {
     if (fs.error) {
-      // 用临时通知展示错误（如 Server 模式不支持拖放）
       alert(fs.error);
     }
     return;
