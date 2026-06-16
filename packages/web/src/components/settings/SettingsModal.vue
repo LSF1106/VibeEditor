@@ -183,25 +183,50 @@ watch(showModal, (v) => { if (v) tryUpdateMargins() })
 
 function startModalResize(edge: ResizeEdge, e: MouseEvent) {
   e.preventDefault()
+
+  // 找到要操作的卡片 DOM 元素
+  const card = containerRef.value?.closest('.n-card') as HTMLElement | null
+  if (!card) return
+
   const startX = e.clientX
   const startY = e.clientY
-  const startW = modalWidth.value
-  const startH = modalHeight.value
+  const startW = card.offsetWidth
+  const startH = card.offsetHeight
 
   document.body.style.cursor = cursorMap[edge]
   document.body.style.userSelect = 'none'
+
+  let rafId = 0
+  let pendingW = startW
+  let pendingH = startH
+
+  function applyPending() {
+    card!.style.width = pendingW + 'px'
+    card!.style.height = pendingH + 'px'
+    rafId = 0
+  }
 
   const onMove = (ev: MouseEvent) => {
     const dx = ev.clientX - startX
     const dy = ev.clientY - startY
 
-    if (edge.includes('e')) modalWidth.value = Math.max(480, startW + dx)
-    if (edge.includes('w')) modalWidth.value = Math.max(480, startW - dx)
-    if (edge.includes('s')) modalHeight.value = Math.max(360, startH + dy)
-    if (edge.includes('n')) modalHeight.value = Math.max(360, startH - dy)
+    if (edge.includes('e')) pendingW = Math.max(480, startW + dx)
+    if (edge.includes('w')) pendingW = Math.max(480, startW - dx)
+    if (edge.includes('s')) pendingH = Math.max(360, startH + dy)
+    if (edge.includes('n')) pendingH = Math.max(360, startH - dy)
+
+    if (!rafId) rafId = requestAnimationFrame(applyPending)
   }
 
   const onUp = () => {
+    if (rafId) {
+      cancelAnimationFrame(rafId)
+      applyPending()
+    }
+    // 拖拽结束后同步回 Vue 状态
+    modalWidth.value = card.offsetWidth
+    modalHeight.value = card.offsetHeight
+
     document.body.style.cursor = ''
     document.body.style.userSelect = ''
     window.removeEventListener('mousemove', onMove, true)
@@ -266,10 +291,10 @@ function startModalResize(edge: ResizeEdge, e: MouseEvent) {
   background: rgba(128, 128, 128, 0.3);
 }
 
-.resize-n { left: 0; right: 0; height: 8px; cursor: ns-resize; }
-.resize-s { bottom: 0; left: 0; right: 0; height: 8px; cursor: ns-resize; }
-.resize-e { right: 0; bottom: 0; width: 8px; cursor: ew-resize; }
-.resize-w { left: 0; bottom: 0; width: 8px; cursor: ew-resize; }
+.resize-n { left: 0; right: 0; height: 6px; cursor: ns-resize; }
+.resize-s { bottom: 0; left: 0; right: 0; height: 6px; cursor: ns-resize; }
+.resize-e { right: 0; bottom: 0; width: 6px; cursor: ew-resize; }
+.resize-w { left: 0; bottom: 0; width: 6px; cursor: ew-resize; }
 
 .resize-ne,
 .resize-nw,

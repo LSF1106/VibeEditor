@@ -76,10 +76,28 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted } from 'vue'
+import { computed, ref, onMounted, h } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { NButton, NIcon, NDropdown, NTag } from 'naive-ui'
-import { MenuOutline, ChevronDown, SettingsOutline } from '@vicons/ionicons5'
+import {
+  MenuOutline,
+  ChevronDown,
+  SettingsOutline,
+  DocumentOutline,
+  FolderOutline,
+  FolderOpenOutline,
+  DocumentAttachOutline,
+  SaveOutline,
+  FileTrayFullOutline,
+  SearchOutline,
+  CutOutline,
+  CopyOutline,
+  ClipboardOutline,
+  ArrowUndoOutline,
+  ArrowRedoOutline,
+  SwapHorizontalOutline,
+  InformationCircleOutline,
+} from '@vicons/ionicons5'
 import { useEditorStore, type WorkspaceMode } from '../../stores/editor'
 
 const store = useEditorStore()
@@ -113,47 +131,52 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 
+/** Naive UI 下拉菜单选项的图标渲染辅助函数 */
+function dropdownIcon(icon: any) {
+  return () => h(NIcon, null, { default: () => h(icon) })
+}
+
 const activeTabName = computed(() => store.activeTab?.name || '')
 
 const fileOptions = computed(() => {
   if (props.isSingleFile) {
     return [
-      { label: t('toolbar.openFolder'), key: 'open-folder' },
-      { label: t('toolbar.openFile'), key: 'open-file' },
+      { label: t('toolbar.openFolder'), key: 'open-folder', icon: dropdownIcon(FolderOpenOutline) },
+      { label: t('toolbar.openFile'), key: 'open-file', icon: dropdownIcon(DocumentAttachOutline) },
       { type: 'divider' as const },
-      { label: t('toolbar.save'), key: 'save' },
+      { label: t('toolbar.save'), key: 'save', icon: dropdownIcon(SaveOutline) },
     ]
   }
   return [
-    { label: t('toolbar.newFile'), key: 'new-file' },
-    { label: t('toolbar.newFolder'), key: 'new-folder' },
+    { label: t('toolbar.newFile'), key: 'new-file', icon: dropdownIcon(DocumentOutline) },
+    { label: t('toolbar.newFolder'), key: 'new-folder', icon: dropdownIcon(FolderOutline) },
     { type: 'divider' as const },
-    { label: t('toolbar.openFolder'), key: 'open-folder' },
-    { label: t('toolbar.openFile'), key: 'open-file' },
+    { label: t('toolbar.openFolder'), key: 'open-folder', icon: dropdownIcon(FolderOpenOutline) },
+    { label: t('toolbar.openFile'), key: 'open-file', icon: dropdownIcon(DocumentAttachOutline) },
     { type: 'divider' as const },
-    { label: t('toolbar.save'), key: 'save' },
+    { label: t('toolbar.save'), key: 'save', icon: dropdownIcon(SaveOutline) },
   ]
 })
 
 const viewOptions = computed(() => [
-  { label: t('toolbar.explorer'), key: 'show-explorer' },
-  { label: t('toolbar.search'), key: 'show-search' },
+  { label: t('toolbar.explorer'), key: 'show-explorer', icon: dropdownIcon(FileTrayFullOutline) },
+  { label: t('toolbar.search'), key: 'show-search', icon: dropdownIcon(SearchOutline) },
 ])
 
 const editOptions = computed(() => [
-  { label: t('toolbar.cut'), key: 'edit-cut' },
-  { label: t('toolbar.copy'), key: 'edit-copy' },
-  { label: t('toolbar.paste'), key: 'edit-paste' },
+  { label: t('toolbar.cut'), key: 'edit-cut', icon: dropdownIcon(CutOutline) },
+  { label: t('toolbar.copy'), key: 'edit-copy', icon: dropdownIcon(CopyOutline) },
+  { label: t('toolbar.paste'), key: 'edit-paste', icon: dropdownIcon(ClipboardOutline) },
   { type: 'divider' as const },
-  { label: t('toolbar.undo'), key: 'edit-undo' },
-  { label: t('toolbar.redo'), key: 'edit-redo' },
+  { label: t('toolbar.undo'), key: 'edit-undo', icon: dropdownIcon(ArrowUndoOutline) },
+  { label: t('toolbar.redo'), key: 'edit-redo', icon: dropdownIcon(ArrowRedoOutline) },
   { type: 'divider' as const },
-  { label: t('toolbar.find'), key: 'edit-find' },
-  { label: t('toolbar.replace'), key: 'edit-replace' },
+  { label: t('toolbar.find'), key: 'edit-find', icon: dropdownIcon(SearchOutline) },
+  { label: t('toolbar.replace'), key: 'edit-replace', icon: dropdownIcon(SwapHorizontalOutline) },
 ])
 
 const helpOptions = computed(() => [
-  { label: t('about.title'), key: 'show-about' },
+  { label: t('about.title'), key: 'show-about', icon: dropdownIcon(InformationCircleOutline) },
 ])
 
 function handleFileSelect(key: string) {
