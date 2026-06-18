@@ -26,7 +26,13 @@ export function useFileTreeContextMenu(
       onRename: (path) => {
         renamingPath.value = path;
       },
-      onDelete: (path) => fs.deleteFile(path),
+      onDelete: (path) => {
+        if (payload.type === 'folder') {
+          fs.deleteDir(path);
+        } else {
+          fs.deleteFile(path);
+        }
+      },
       onNewFile: (dirPath) => {
         creatingInDir.value = { path: dirPath || '', type: 'file' };
         creatingNodeKey.value++;

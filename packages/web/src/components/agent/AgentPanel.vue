@@ -66,7 +66,7 @@
         {{ $t('agent.guideDesc1') }}<br />
         {{ $t('agent.guideDesc2') }}
       </div>
-      <button class="guide-cta" @click="showSettings = true">{{ $t('agent.addProvider') }}</button>
+      <button class="guide-cta" @click="$emit('open-settings')">{{ $t('agent.addProvider') }}</button>
     </div>
 
     <!-- 无工作区时的提示（仅 server 模式且确实无工作区时） -->
@@ -242,14 +242,11 @@
             :activeId="providerSettings.activeId.value"
             @select="providerSettings.setActive($event)"
           />
-          <button class="settings-btn" :title="$t('agent.providerSettings')" @click="showSettings = true">&#9881;</button>
+          <button class="settings-btn" :title="$t('agent.providerSettings')" @click="$emit('open-settings')">&#9881;</button>
         </div>
         <ModeSelector v-model="currentMode" />
       </div>
     </template>
-
-    <!-- 设置对话框 -->
-    <SettingsDialog :visible="showSettings" @close="showSettings = false" />
   </div>
 </template>
 
@@ -262,7 +259,6 @@ import { useEditorStore } from '../../stores/editor';
 import { renderMarkdown } from '../../services/markdown';
 import type { ChatMessage } from '../../composables/useAgent';
 import type { ParsedEdit } from '../../services/editParser';
-import SettingsDialog from './SettingsDialog.vue';
 import ModeSelector from './ModeSelector.vue';
 import ProviderSelect from './ProviderSelect.vue';
 import { webAgentLog } from '../../services/logger';
@@ -273,6 +269,7 @@ const props = defineProps<{}>();
 const emit = defineEmits<{
   'apply-edits': [edits: ParsedEdit[]]
   'undo-edits': []
+  'open-settings': []
 }>();
 
 const sessionStore = useSessionStore();
@@ -280,7 +277,6 @@ const providerSettings = useLLMSettings();
 const editorStore = useEditorStore();
 const input = ref('');
 const messagesContainer = ref<HTMLElement>();
-const showSettings = ref(false);
 const inputHeight = ref(90);
 let isResizingInput = false;
 

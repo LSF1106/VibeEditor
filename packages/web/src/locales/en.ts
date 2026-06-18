@@ -12,6 +12,10 @@ export default {
     hideSidebar: 'Hide Sidebar',
     file: 'File',
     edit: 'Edit',
+    view: 'View',
+    explorer: 'Explorer',
+    search: 'Search',
+    settings: 'Settings',
     newFile: 'New File',
     newFileShort: 'Ctrl+N',
     newFolder: 'New Folder',
@@ -62,6 +66,9 @@ export default {
   settings: {
     language: 'Language',
     theme: 'Theme',
+    general: 'General',
+    aiModel: 'AI Models',
+    mcpServer: 'MCP Servers',
   },
   placeholder: {
     title: 'VibeEditor',
@@ -138,6 +145,21 @@ export default {
     noDirectories: 'No directories',
     filenamePlaceholder: 'filename.ext',
     goUp: '..',
+  },
+  newItemDialog: {
+    fileTitle: 'New File',
+    folderTitle: 'New Folder',
+    create: 'Create',
+    cancel: 'Cancel',
+    filePlaceholder: 'filename.ext',
+    folderPlaceholder: 'Folder name',
+  },
+  saveChoice: {
+    title: 'Save File Where?',
+    description: 'Choose save location',
+    local: 'Download Locally',
+    server: 'Save to Server',
+    cancel: 'Cancel',
   },
   searchPanel: {
     placeholder: 'Search files...',

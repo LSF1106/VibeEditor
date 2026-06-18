@@ -18,7 +18,7 @@
         :creating-node-key="creatingNodeKey"
         @select-file="(p) => emit('select-file', p)"
         @expand-dir="(p) => emit('expand-dir', p)"
-        @delete-file="(p) => emit('delete-file', p)"
+
         @contextmenu="(payload) => emit('contextmenu', payload)"
         @confirm-rename="(oldPath, newName) => emit('confirm-rename', oldPath, newName)"
         @confirm-create="(parentPath, name, type) => emit('confirm-create', parentPath, name, type)"
@@ -65,7 +65,6 @@ const props = defineProps<{
 const emit = defineEmits<{
   'select-file': [path: string];
   'expand-dir': [path: string];
-  'delete-file': [path: string];
   'contextmenu': [payload: { type: 'file' | 'folder' | 'root'; path: string; name: string; event: MouseEvent }];
   'confirm-rename': [oldPath: string, newName: string];
   'confirm-create': [parentPath: string, name: string, type: 'file' | 'folder'];

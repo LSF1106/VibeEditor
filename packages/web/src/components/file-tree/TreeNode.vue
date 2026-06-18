@@ -24,7 +24,7 @@
         />
       </div>
       <span v-else class="node-name" :title="node.path">{{ node.name }}</span>
-      <span v-if="!node.isDirectory && !isRenaming" class="node-delete" @click.stop="emit('delete-file', node.path)" :title="$t('fileTree.deleteFile')">🗑</span>
+
     </div>
     <template v-if="expanded && node.isDirectory">
       <div v-if="loadingChild" class="tree-node-loading" :style="{ paddingLeft: (depth + 1) * 16 + 8 + 'px' }">
@@ -43,7 +43,7 @@
         :creating-node-key="creatingNodeKey"
         @select-file="(p) => emit('select-file', p)"
         @expand-dir="(p) => emit('expand-dir', p)"
-        @delete-file="(p) => emit('delete-file', p)"
+
         @contextmenu="(payload) => emit('contextmenu', payload)"
         @confirm-rename="(oldPath, newName) => emit('confirm-rename', oldPath, newName)"
         @confirm-create="(parentPath, name, type) => emit('confirm-create', parentPath, name, type)"
@@ -94,7 +94,6 @@ const props = defineProps<{
 const emit = defineEmits<{
   'select-file': [path: string];
   'expand-dir': [path: string];
-  'delete-file': [path: string];
   'contextmenu': [payload: { type: 'file' | 'folder'; path: string; name: string; event: MouseEvent }];
   'confirm-rename': [oldPath: string, newName: string];
   'confirm-create': [parentPath: string, name: string, type: 'file' | 'folder'];
@@ -235,21 +234,7 @@ function handleCreateBlur() {
   white-space: nowrap;
   flex: 1;
 }
-.node-delete {
-  margin-left: auto;
-  font-size: 12px;
-  opacity: 0;
-  visibility: hidden;
-  padding: 0 4px;
-  flex-shrink: 0;
-}
-.tree-node:hover .node-delete {
-  opacity: 1;
-  visibility: visible;
-}
-.node-delete:hover {
-  color: #f44747;
-}
+
 .node-rename-input-wrapper {
   flex: 1;
   min-width: 0;

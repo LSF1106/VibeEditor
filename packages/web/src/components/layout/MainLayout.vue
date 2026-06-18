@@ -14,8 +14,8 @@
       @open-folder="handleOpenFolder"
       @open-file="handleOpenFile"
       @save="fs.saveCurrentFile"
-      @new-file="store.newUntitled"
-      @new-folder="fs.createFolder"
+      @new-file="handleNewFileAction"
+      @new-folder="handleNewFolderAction"
       @edit-cut="handleEditAction('cut')"
       @edit-copy="handleEditAction('copy')"
       @edit-paste="handleEditAction('paste')"
@@ -24,84 +24,60 @@
       @edit-find="handleEditAction('find')"
       @edit-replace="handleEditAction('replace')"
       @toggle-sidebar="toggleSidebar"
+      @show-explorer="handleShowExplorer"
+      @show-search="handleShowSearch"
+      @open-settings="handleOpenSettings"
       @show-about="showAboutDialog = true"
       :sidebar-collapsed="sidebarCollapsed"
     />
     <div ref="mainContentRef" class="main-content">
-      <ActivityBar
-        v-if="!store.isSingleFile"
-        :items="topActivityItems"
-        :bottom-items="bottomActivityItems"
-        :active-id="activeActivity"
-        @select="onActivitySelect"
-      >
-        <template v-slot:bottom>
-          <SettingDropdown />
-        </template>
-      </ActivityBar>
       <div v-if="!store.isSingleFile && !sidebarCollapsed" class="sidebar" :style="{ width: sidebarWidth + 'px' }">
-        <template v-if="activeActivity === 'explorer'">
-          <SideBar
-            :title="activeActivityTitle"
-            :sections="sidebarSections"
-          >
-            <template v-slot:explorer>
-              <NewFileTree
-                v-if="useNewFileTree"
-                :nodes="store.fileTreeNodes"
-                :workspace-root="store.workspaceRoot"
-                :workspace-mode="store.workspaceMode"
-                :loading="fs.isLoading"
-                :expanded-dirs="expandedDirs"
-                :loading-dirs="loadingDirs"
-                :dir-children="dirChildren"
-                :renaming-path="renamingPath"
-                :creating-in-dir="creatingInDir"
-                :creating-node-key="creatingNodeKey"
-                :clipboard="fs.clipboard"
-                @select-file="fs.openAndReadFile"
-                @expand-dir="handleExpandDir"
-                @delete-file="fs.deleteFile"
-                @menu-action="handleNewMenuAction"
-                @confirm-rename="handleConfirmRename"
-                @confirm-create="handleConfirmCreate"
-                @cancel-create="handleCancelCreate"
-              />
-              <FileTree
-                v-else
-                :nodes="store.fileTreeNodes"
-                :workspace-root="store.workspaceRoot"
-                :workspace-mode="store.workspaceMode"
-                :loading="fs.isLoading"
-                :expanded-dirs="expandedDirs"
-                :loading-dirs="loadingDirs"
-                :dir-children="dirChildren"
-                :renaming-path="renamingPath"
-                :creating-in-dir="creatingInDir"
-                :creating-node-key="creatingNodeKey"
-                @select-file="fs.openAndReadFile"
-                @expand-dir="handleExpandDir"
-                @delete-file="fs.deleteFile"
-                @contextmenu="handleContextMenu"
-                @confirm-rename="handleConfirmRename"
-                @confirm-create="handleConfirmCreate"
-                @cancel-create="handleCancelCreate"
-              />
-            </template>
-          </SideBar>
-        </template>
-        <template v-else-if="activeActivity === 'search'">
-          <SearchPanel
-            :client="fs.client"
-            @open-file="fs.openAndReadFile"
-          />
-        </template>
-        <template v-else>
-          <SideBar
-            :title="activeActivityTitle"
-            :sections="sidebarSections"
-          />
-        </template>
+        <SideBar
+          :title="$t('sidebar.explorer')"
+          :sections="sidebarSections"
+        >
+          <template v-slot:explorer>
+            <NewFileTree
+              v-if="useNewFileTree"
+              :nodes="store.fileTreeNodes"
+              :workspace-root="store.workspaceRoot"
+              :workspace-mode="store.workspaceMode"
+              :loading="fs.isLoading"
+              :expanded-dirs="expandedDirs"
+              :loading-dirs="loadingDirs"
+              :dir-children="dirChildren"
+              :renaming-path="renamingPath"
+              :creating-in-dir="creatingInDir"
+              :creating-node-key="creatingNodeKey"
+              :clipboard="fs.clipboard"
+              @select-file="fs.openAndReadFile"
+              @expand-dir="handleExpandDir"
+              @menu-action="handleNewMenuAction"
+              @confirm-rename="handleConfirmRename"
+              @confirm-create="handleConfirmCreate"
+              @cancel-create="handleCancelCreate"
+            />
+            <FileTree
+              v-else
+              :nodes="store.fileTreeNodes"
+              :workspace-root="store.workspaceRoot"
+              :workspace-mode="store.workspaceMode"
+              :loading="fs.isLoading"
+              :expanded-dirs="expandedDirs"
+              :loading-dirs="loadingDirs"
+              :dir-children="dirChildren"
+              :renaming-path="renamingPath"
+              :creating-in-dir="creatingInDir"
+              :creating-node-key="creatingNodeKey"
+              @select-file="fs.openAndReadFile"
+              @expand-dir="handleExpandDir"
+              @contextmenu="handleContextMenu"
+              @confirm-rename="handleConfirmRename"
+              @confirm-create="handleConfirmCreate"
+              @cancel-create="handleCancelCreate"
+            />
+          </template>
+        </SideBar>
       </div>
       <div v-if="!store.isSingleFile && !sidebarCollapsed" class="resize-handle" @mousedown="startSidebarResize"></div>
       <div class="editor-area">
@@ -197,7 +173,7 @@
       </div>
       <div v-if="activeRightPanel" class="right-resize-handle" @mousedown="startRightPanelResize"></div>
       <div v-if="activeRightPanel" class="right-sidebar" :style="{ width: rightPanelWidth + 'px' }">
-        <AgentPanel v-if="activeRightPanel === 'agent'" @apply-edits="handleApplyEdits" @undo-edits="undoLastEdits" />
+        <AgentPanel v-if="activeRightPanel === 'agent'" @apply-edits="handleApplyEdits" @undo-edits="undoLastEdits" @open-settings="handleOpenSettings('ai')" />
         <McpSettingsPanel v-else-if="activeRightPanel === 'mcp'" />
       </div>
       <RightToolbar
@@ -219,7 +195,32 @@
       @confirm="onSaveDialogConfirm"
       @cancel="onSaveDialogCancel"
     />
+    <n-modal
+      v-model:show="showSaveChoiceDialog"
+      preset="card"
+      :title="$t('saveChoice.title')"
+      style="width: 400px"
+      @after-leave="onSaveChoiceCancel"
+    >
+      <p style="text-align:center;margin-bottom:16px">{{ $t('saveChoice.description') }}</p>
+      <template #footer>
+        <n-button @click="onSaveChoiceCancel">{{ $t('saveChoice.cancel') }}</n-button>
+        <n-button @click="onSaveChoiceLocal">{{ $t('saveChoice.local') }}</n-button>
+        <n-button type="primary" @click="onSaveChoiceServer">{{ $t('saveChoice.server') }}</n-button>
+      </template>
+    </n-modal>
+    <NewItemDialog
+      v-if="showNewItemDialog"
+      :client="fs.client"
+      :type="newItemType"
+      :default-name="newItemDefaultName"
+      :workspace-root="store.workspaceRoot"
+      @confirm="onNewItemConfirm"
+      @cancel="onNewItemCancel"
+    />
     <AboutDialog :visible="showAboutDialog" @close="showAboutDialog = false" />
+    <SettingsModal :visible="showSettingsModal" :initial-tab="initialSettingsTab" @close="showSettingsModal = false" />
+    <SearchPopup :visible="showSearchPopup" :client="fs.client" @close="showSearchPopup = false" @open-file="handleSearchOpenFile" />
     <n-modal
       v-model:show="showWorkspaceDialog"
       preset="card"
@@ -287,14 +288,11 @@ import type { ResizeEdge } from '../../composables/useWindowResize';
 import { useFileTreeContextMenu } from '../../composables/useFileTreeContextMenu';
 import Toolbar from '../toolbar/Toolbar.vue';
 import { webFileLog } from '../../services/logger';
-import ActivityBar from './ActivityBar.vue';
-import type { ActivityItem } from './ActivityBar.vue';
 import SideBar from './SideBar.vue';
 import type { SideBarSection } from './SideBar.vue';
 import FileTree from '../file-tree/FileTree.vue';
 import { NewFileTree } from '../new-file-tree';
 import type { ContextMenuPayload } from '../new-file-tree';
-import SearchPanel from '../SearchPanel.vue';
 import MonacoEditor from '../editor/MonacoEditor.vue';
 import ImageViewer from '../editor/ImageViewer.vue';
 import DocxViewer from '../editor/DocxViewer.vue';
@@ -307,13 +305,15 @@ import AgentPanel from '../agent/AgentPanel.vue';
 import McpSettingsPanel from '../mcp/McpSettingsPanel.vue';
 import RightToolbar from './RightToolbar.vue';
 import type { RightToolbarItem } from './RightToolbar.vue';
-import SettingDropdown from '../settings/SettingDropdown.vue';
 import SaveDialog from '../SaveDialog.vue';
+import NewItemDialog from '../NewItemDialog.vue';
 import StatusBar from '../StatusBar.vue';
 import AboutDialog from './AboutDialog.vue';
+import SettingsModal from '../settings/SettingsModal.vue';
+import SearchPopup from '../SearchPopup.vue';
 import OpenFolderDialog from '../dialogs/OpenFolderDialog.vue';
 import OpenFileDialog from '../dialogs/OpenFileDialog.vue';
-import { DocumentOutline, SearchOutline, FolderOpenOutline } from '@vicons/ionicons5'
+import { DocumentOutline, FolderOpenOutline } from '@vicons/ionicons5'
 import { ChatbubblesOutline, HardwareChipOutline } from '@vicons/ionicons5'
 
 const store = useEditorStore();
@@ -328,10 +328,12 @@ const sidebarCollapsed = ref(false);
 const sidebarSavedWidth = ref(260);
 const rightPanelWidth = ref(0);
 const MIN_EDITOR_WIDTH = 240;
-const activeActivity = ref('explorer');
 const isDraggingFolder = ref(false);
 // Drag events fire as the cursor moves across child elements, so count depth.
 let dragDepth = 0;
+const showSettingsModal = ref(false);
+const showSearchPopup = ref(false);
+const initialSettingsTab = ref('general');
 
 const { renamingPath, creatingInDir, creatingNodeKey, handleContextMenu, handleConfirmRename, handleConfirmCreate, handleCancelCreate } = useFileTreeContextMenu(fs, store, t, { clearDirState, handleExpandDir });
 
@@ -383,7 +385,11 @@ function handleNewMenuAction(action: string, payload: ContextMenuPayload) {
       renamingPath.value = payload.path;
       break;
     case 'delete':
-      fs.deleteFile(payload.path);
+      if (payload.type === 'folder') {
+        fs.deleteDir(payload.path);
+      } else {
+        fs.deleteFile(payload.path);
+      }
       break;
     case 'refresh':
       clearDirState();
@@ -399,13 +405,10 @@ function handleNewMenuAction(action: string, payload: ContextMenuPayload) {
 const isMaximized = ref(false);
 const { startResize, isResizing: isWindowResizing } = useWindowResize();
 
-// ===== 活动栏配置 =====
-const topActivityItems = computed<ActivityItem[]>(() => [
-  { id: 'explorer', label: t('activityBar.explorer'), icon: DocumentOutline },
-  { id: 'search', label: t('activityBar.search'), icon: SearchOutline },
+// ===== 侧边栏配置 =====
+const sidebarSections = ref<SideBarSection[]>([
+  { id: 'explorer', label: t('sidebar.explorer'), count: 0 },
 ]);
-
-const bottomActivityItems = computed<ActivityItem[]>(() => []);
 
 const rightToolbarItems = computed<RightToolbarItem[]>(() => [
   { id: 'agent', label: t('rightToolbar.agent'), icon: ChatbubblesOutline },
@@ -421,12 +424,12 @@ function onRightToolbarSelect(id: string) {
   }
 }
 
-/** 右侧面板最大宽度：主区域宽 - 活动栏(48) - 侧边栏(如果展开) - 调整手柄(4) - 最小编辑器宽 - 右侧工具栏(48) */
+/** 右侧面板最大宽度：主区域宽 - 侧边栏(如果展开) - 调整手柄(4) - 最小编辑器宽 - 右侧工具栏(48) */
 function calcRightPanelMax(): number {
   if (!mainContentRef.value) return 800;
   const total = mainContentRef.value.clientWidth;
   const sidebar = sidebarCollapsed.value ? 0 : sidebarWidth.value + 4;
-  return total - 48 - sidebar - MIN_EDITOR_WIDTH - 48;
+  return total - sidebar - MIN_EDITOR_WIDTH - 48;
 }
 
 /** 初始化右侧面板宽度为剩余空间的一半 */
@@ -437,7 +440,7 @@ function initRightPanelWidth() {
   }
   const total = mainContentRef.value.clientWidth;
   const sidebar = sidebarCollapsed.value ? 0 : sidebarWidth.value + 4;
-  const available = total - 48 - sidebar - 48;
+  const available = total - sidebar - 48;
   rightPanelWidth.value = Math.round(available / 2);
 }
 
@@ -466,42 +469,6 @@ function onWindowResize() {
   }
 }
 
-const activeActivityTitle = ref(t('sidebar.explorer'));
-
-const sidebarSections = ref<SideBarSection[]>([
-  { id: 'explorer', label: t('sidebar.explorer'), count: 0 },
-]);
-
-/** 活动栏切换：点击同一项 → 折叠侧边栏；不同项 → 切换内容 */
-function onActivitySelect(id: string) {
-  if (activeActivity.value === id && !sidebarCollapsed.value) {
-    toggleSidebar();
-    return;
-  }
-  activeActivity.value = id;
-  const allItems = topActivityItems.value;
-  const item = allItems.find(i => i.id === id);
-  if (item) {
-    activeActivityTitle.value = item.label.replace(/\s*\(.*/, '').toUpperCase();
-  }
-  if (sidebarCollapsed.value) {
-    toggleSidebar();
-  }
-  if (id === 'explorer') {
-    sidebarSections.value = [
-      { id: 'explorer', label: t('sidebar.explorer'), count: store.fileTreeNodes.length },
-    ];
-  } else if (id === 'search') {
-    sidebarSections.value = [
-      { id: 'search', label: t('sidebar.search'), count: undefined },
-    ];
-  } else {
-    sidebarSections.value = [
-      { id: 'placeholder', label: t('sidebar.comingSoon'), count: undefined },
-    ];
-  }
-}
-
 // ===== 文件树展开/加载状态 =====
 const expandedDirs = ref(new Set<string>());
 const loadingDirs = ref(new Set<string>());
@@ -514,6 +481,18 @@ const showSaveDialog = ref(false);
 const saveDialogDefaultName = ref('');
 const showAboutDialog = ref(false);
 let saveDialogResolver: ((value: string | null) => void) | null = null;
+
+// ===== 新建文件/文件夹对话框状态 =====
+const showNewItemDialog = ref(false);
+const newItemType = ref<'file' | 'folder'>('file');
+const newItemDefaultName = ref('untitled');
+let newItemResolver: ((value: string | null) => void) | null = null;
+
+// ===== 保存方式选择对话框状态（无工作区时） =====
+const showSaveChoiceDialog = ref(false);
+const saveChoiceFileName = ref('');
+const saveChoiceContent = ref('');
+let saveChoiceResolver: ((value: string | null) => void) | null = null;
 
 // ===== 工作区打开确认弹窗 =====
 const showWorkspaceDialog = ref(false);
@@ -604,12 +583,44 @@ function toggleSidebar() {
   }
 }
 
+function handleShowExplorer() {
+  if (!sidebarCollapsed.value) {
+    toggleSidebar();
+    return;
+  }
+  toggleSidebar();
+}
+
+function handleShowSearch() {
+  showSearchPopup.value = true;
+}
+
+function handleOpenSettings(initialTab?: string) {
+  initialSettingsTab.value = initialTab || 'general';
+  showSettingsModal.value = true;
+}
+
+function handleSearchOpenFile(path: string) {
+  showSearchPopup.value = false;
+  fs.openAndReadFile(path);
+}
+
 /** 注册到 useFileSystem 的"另存为"处理器（返回 Promise 等待用户选择路径） */
 function handleSaveFileAs(): Promise<string | null> {
   return new Promise((resolve) => {
-    saveDialogResolver = resolve;
-    saveDialogDefaultName.value = store.activeTab?.name || 'untitled';
-    showSaveDialog.value = true;
+    if (!store.workspaceRoot) {
+      // 无工作区：让用户选择本地下载还是服务器保存
+      const tab = store.activeTab;
+      saveChoiceFileName.value = tab?.name || 'untitled';
+      saveChoiceContent.value = tab?.content || '';
+      saveChoiceResolver = resolve;
+      showSaveChoiceDialog.value = true;
+    } else {
+      // 有工作区：直接走 SaveDialog
+      saveDialogResolver = resolve;
+      saveDialogDefaultName.value = store.activeTab?.name || 'untitled';
+      showSaveDialog.value = true;
+    }
   });
 }
 
@@ -623,6 +634,113 @@ function onSaveDialogCancel() {
   showSaveDialog.value = false;
   saveDialogResolver?.(null);
   saveDialogResolver = null;
+}
+
+// ===== 新建文件/文件夹弹窗处理 =====
+
+/** 触发新建文件对话框 */
+function handleNewFile(): Promise<string | null> {
+  return new Promise((resolve) => {
+    newItemResolver = resolve;
+    newItemType.value = 'file';
+    newItemDefaultName.value = 'untitled';
+    showNewItemDialog.value = true;
+  });
+}
+
+/** 触发新建文件夹对话框 */
+function handleNewFolder(): Promise<string | null> {
+  return new Promise((resolve) => {
+    newItemResolver = resolve;
+    newItemType.value = 'folder';
+    newItemDefaultName.value = 'new-folder';
+    showNewItemDialog.value = true;
+  });
+}
+
+/** Toolbar 按钮触发的新建文件 */
+function handleNewFileAction() {
+  handleNewFile();
+}
+
+/** Toolbar 按钮触发的新建文件夹 */
+function handleNewFolderAction() {
+  handleNewFolder();
+}
+
+/** 新建对话框确认：创建文件/文件夹并打开/刷新 */
+async function onNewItemConfirm(path: string) {
+  showNewItemDialog.value = false;
+  if (newItemType.value === 'file') {
+    try {
+      await fs.client.writeFile(path, '');
+      store.openFile(path, '');
+      handleAfterSave(path);
+    } catch (e: any) {
+      fs.error = e.message;
+    }
+  } else {
+    try {
+      await fs.client.createDir(path);
+      handleAfterSave(path);
+    } catch (e: any) {
+      fs.error = e.message;
+    }
+  }
+  newItemResolver?.(path);
+  newItemResolver = null;
+}
+
+/** 新建对话框取消 */
+function onNewItemCancel() {
+  showNewItemDialog.value = false;
+  newItemResolver?.(null);
+  newItemResolver = null;
+}
+
+// ===== 保存方式选择弹窗处理 =====
+
+/** 用户选择"下载到本地" */
+function onSaveChoiceLocal() {
+  showSaveChoiceDialog.value = false;
+  const name = saveChoiceFileName.value;
+  const content = saveChoiceContent.value;
+
+  // 触发浏览器下载（纯浏览器 API，不经过后端）
+  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+
+  // 清除脏标记，保持 isUntitled（下次保存仍弹选择框）
+  const tab = store.activeTab;
+  if (tab) store.saveTab(tab.id);
+
+  // 返回 null → saveCurrentFile 提前 return，不写服务器
+  saveChoiceResolver?.(null);
+  saveChoiceResolver = null;
+}
+
+/** 用户选择"保存到服务器" */
+function onSaveChoiceServer() {
+  showSaveChoiceDialog.value = false;
+  // 切换到 SaveDialog 流程（通过 fs.client.writeFile 写服务器）
+  saveDialogResolver = saveChoiceResolver;
+  saveDialogDefaultName.value = saveChoiceFileName.value;
+  showSaveDialog.value = true;
+  saveChoiceResolver = null;
+}
+
+/** 用户取消 */
+function onSaveChoiceCancel() {
+  showSaveChoiceDialog.value = false;
+  saveChoiceResolver?.(null);
+  saveChoiceResolver = null;
 }
 
 function handleOpenFolderDialog(): Promise<string | null> {
@@ -710,14 +828,13 @@ fs.setSaveAsHandler(handleSaveFileAs);
 fs.setOnAfterSave(handleAfterSave);
 fs.setOpenFolderDialogHandler(handleOpenFolderDialog);
 fs.setOpenFileDialogHandler(handleOpenFileDialog);
+fs.setNewFileHandler(handleNewFile);
 
 // 文件树节点数量变化时更新侧边栏计数
 watch(() => store.fileTreeNodes.length, (count) => {
-  if (activeActivity.value === 'explorer' && sidebarSections.value[0]) {
-    sidebarSections.value = [
-      { id: 'explorer', label: t('sidebar.explorer'), count },
-    ];
-  }
+  sidebarSections.value = [
+    { id: 'explorer', label: t('sidebar.explorer'), count },
+  ];
 });
 
 // 标签页变化时自动持久化到 .vibeeditor/workspace.json
@@ -904,17 +1021,31 @@ async function handleDrop(e: DragEvent) {
   const dataTransfer = e.dataTransfer;
   resetDragState();
 
+  // 提取拖放的第一个路径
+  const dropped = Array.from(dataTransfer.files)
+    .map(f => (f as File & { path?: string }).path)
+    .filter((p): p is string => Boolean(p));
+  const firstPath = dropped[0];
+
+  // 已有工作区时弹出确认弹窗，让用户选择在当前窗口还是新窗口打开
+  if (firstPath && hasExistingWorkspace()) {
+    const choice = await showWorkspaceConfirmDialog(firstPath, false);
+    if (choice === 'new') {
+      await openFolderInNewContext(firstPath);
+      return;
+    }
+    if (choice === 'cancel') return;
+    // choice === 'current' 继续走原有流程
+  }
+
   const opened = await fs.openDroppedFolder(dataTransfer);
   if (!opened) {
     if (fs.error) {
-      // 用临时通知展示错误（如 Server 模式不支持拖放）
       alert(fs.error);
     }
     return;
   }
 
-  activeActivity.value = 'explorer';
-  activeActivityTitle.value = t('sidebar.explorer');
   sidebarSections.value = [
     { id: 'explorer', label: t('sidebar.explorer'), count: store.fileTreeNodes.length },
   ];
@@ -954,10 +1085,10 @@ onMounted(async () => {
     window.electronAPI.onMenuAction((action: string) => {
       switch (action) {
         case 'new-file':
-          store.newUntitled();
+          handleNewFileAction();
           break;
         case 'new-folder':
-          fs.createFolder();
+          handleNewFolderAction();
           break;
         case 'open-folder':
           handleOpenFolder();
@@ -1148,7 +1279,6 @@ async function handleApplyEdits(edits: ParsedEdit[]) {
 .resize-handle {
   width: 4px;
   cursor: col-resize;
-  background: var(--border-color);
   flex-shrink: 0;
 }
 .resize-handle:hover {

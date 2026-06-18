@@ -16,6 +16,12 @@
           <n-icon size="10" :component="ChevronDown" />
         </n-button>
       </n-dropdown>
+      <n-dropdown trigger="hover" :options="viewOptions" @select="handleViewSelect">
+        <n-button quaternary size="small" class="dropdown-trigger-btn">
+          {{ $t('toolbar.view') }}
+          <n-icon size="10" :component="ChevronDown" />
+        </n-button>
+      </n-dropdown>
       <n-dropdown trigger="hover" :options="editOptions" @select="handleEditSelect">
         <n-button quaternary size="small" class="dropdown-trigger-btn">
           {{ $t('toolbar.edit') }}
@@ -34,9 +40,14 @@
       <span v-else class="toolbar-title">{{ $t('toolbar.appName') }}</span>
     </div>
     <div class="toolbar-right">
-      <n-tag v-if="workspaceMode" size="small" :bordered="false" class="toolbar-badge">
-        {{ workspaceMode.toUpperCase() }}
-      </n-tag>
+      <n-button
+        quaternary
+        size="small"
+        :title="$t('toolbar.settings')"
+        @click="$emit('open-settings')"
+      >
+        <template #icon><n-icon size="18" :component="SettingsOutline" /></template>
+      </n-button>
       <div v-if="env === 'electron'" class="window-controls">
         <button class="win-btn win-minimize" title="Minimize" @click="handleMinimize">
           <svg width="10" height="10" viewBox="0 0 10 10"><rect y="4" width="10" height="1" fill="currentColor"/></svg>
@@ -62,10 +73,28 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted } from 'vue'
+import { computed, ref, onMounted, h } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { NButton, NIcon, NDropdown, NTag } from 'naive-ui'
-import { MenuOutline, ChevronDown } from '@vicons/ionicons5'
+import { NButton, NIcon, NDropdown } from 'naive-ui'
+import {
+  MenuOutline,
+  ChevronDown,
+  SettingsOutline,
+  DocumentOutline,
+  FolderOutline,
+  FolderOpenOutline,
+  DocumentAttachOutline,
+  SaveOutline,
+  FileTrayFullOutline,
+  SearchOutline,
+  CutOutline,
+  CopyOutline,
+  ClipboardOutline,
+  ArrowUndoOutline,
+  ArrowRedoOutline,
+  SwapHorizontalOutline,
+  InformationCircleOutline,
+} from '@vicons/ionicons5'
 import { useEditorStore, type WorkspaceMode } from '../../stores/editor'
 
 const store = useEditorStore()
@@ -84,6 +113,9 @@ const emit = defineEmits<{
   'new-file': []
   'new-folder': []
   'toggle-sidebar': []
+  'show-explorer': []
+  'show-search': []
+  'open-settings': []
   'edit-cut': []
   'edit-copy': []
   'edit-paste': []
@@ -96,45 +128,58 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 
+/** Naive UI 下拉菜单选项的图标渲染辅助函数 */
+function dropdownIcon(icon: any) {
+  return () => h(NIcon, null, { default: () => h(icon) })
+}
+
 const activeTabName = computed(() => store.activeTab?.name || '')
 
 const fileOptions = computed(() => {
   if (props.isSingleFile) {
     return [
-      { label: t('toolbar.openFolder'), key: 'open-folder' },
-      { label: t('toolbar.openFile'), key: 'open-file' },
+      { label: t('toolbar.openFolder'), key: 'open-folder', icon: dropdownIcon(FolderOpenOutline) },
+      { label: t('toolbar.openFile'), key: 'open-file', icon: dropdownIcon(DocumentAttachOutline) },
       { type: 'divider' as const },
-      { label: t('toolbar.save'), key: 'save' },
+      { label: t('toolbar.save'), key: 'save', icon: dropdownIcon(SaveOutline) },
     ]
   }
   return [
-    { label: t('toolbar.newFile'), key: 'new-file' },
-    { label: t('toolbar.newFolder'), key: 'new-folder' },
+    { label: t('toolbar.newFile'), key: 'new-file', icon: dropdownIcon(DocumentOutline) },
+    { label: t('toolbar.newFolder'), key: 'new-folder', icon: dropdownIcon(FolderOutline) },
     { type: 'divider' as const },
-    { label: t('toolbar.openFolder'), key: 'open-folder' },
-    { label: t('toolbar.openFile'), key: 'open-file' },
+    { label: t('toolbar.openFolder'), key: 'open-folder', icon: dropdownIcon(FolderOpenOutline) },
+    { label: t('toolbar.openFile'), key: 'open-file', icon: dropdownIcon(DocumentAttachOutline) },
     { type: 'divider' as const },
-    { label: t('toolbar.save'), key: 'save' },
+    { label: t('toolbar.save'), key: 'save', icon: dropdownIcon(SaveOutline) },
   ]
 })
 
+const viewOptions = computed(() => [
+  { label: t('toolbar.explorer'), key: 'show-explorer', icon: dropdownIcon(FileTrayFullOutline) },
+  { label: t('toolbar.search'), key: 'show-search', icon: dropdownIcon(SearchOutline) },
+])
+
 const editOptions = computed(() => [
-  { label: t('toolbar.cut'), key: 'edit-cut' },
-  { label: t('toolbar.copy'), key: 'edit-copy' },
-  { label: t('toolbar.paste'), key: 'edit-paste' },
+  { label: t('toolbar.cut'), key: 'edit-cut', icon: dropdownIcon(CutOutline) },
+  { label: t('toolbar.copy'), key: 'edit-copy', icon: dropdownIcon(CopyOutline) },
+  { label: t('toolbar.paste'), key: 'edit-paste', icon: dropdownIcon(ClipboardOutline) },
   { type: 'divider' as const },
-  { label: t('toolbar.undo'), key: 'edit-undo' },
-  { label: t('toolbar.redo'), key: 'edit-redo' },
+  { label: t('toolbar.undo'), key: 'edit-undo', icon: dropdownIcon(ArrowUndoOutline) },
+  { label: t('toolbar.redo'), key: 'edit-redo', icon: dropdownIcon(ArrowRedoOutline) },
   { type: 'divider' as const },
-  { label: t('toolbar.find'), key: 'edit-find' },
-  { label: t('toolbar.replace'), key: 'edit-replace' },
+  { label: t('toolbar.find'), key: 'edit-find', icon: dropdownIcon(SearchOutline) },
+  { label: t('toolbar.replace'), key: 'edit-replace', icon: dropdownIcon(SwapHorizontalOutline) },
 ])
 
 const helpOptions = computed(() => [
-  { label: t('about.title'), key: 'show-about' },
+  { label: t('about.title'), key: 'show-about', icon: dropdownIcon(InformationCircleOutline) },
 ])
 
 function handleFileSelect(key: string) {
+  emit(key as any)
+}
+function handleViewSelect(key: string) {
   emit(key as any)
 }
 function handleEditSelect(key: string) {
@@ -216,9 +261,6 @@ function handleToolbarDblClick() {
   font-size: 11px;
   font-weight: 400;
   letter-spacing: 0.3px;
-}
-.toolbar-badge {
-  margin-right: 8px;
 }
 .dropdown-trigger-btn {
   font-size: 12px;
