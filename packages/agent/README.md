@@ -39,19 +39,15 @@ src/
 │   ├── adapter.ts      # MCPToolAdapter —— 将 MCP 工具桥接为 ITool
 │   ├── config.ts       # McpConfig / McpServerConfig / McpServerEntry 类型
 │   ├── tool-catalog.ts # ToolCatalog —— 只读工具元数据存储
-│   ├── utils.ts        # MCP 结果格式化、XML usage 构建
-│   └── __test.ts       # MCP 集成测试（STDIO / SSE / HTTP）
+│   └── utils.ts        # MCP 结果格式化、XML usage 构建
 ├── llm/
 │   ├── index.ts        # 重导出 LLMGateway 等
 │   └── gateway.ts      # LLMGateway —— LLM 提供商 CRUD + 持久化（llm-settings.json）
 ├── openai-client.ts    # createOpenAILLMProvider() / buildMessages() / resolveLLMConfig()
-├── provider.ts         # OpenAILikeProvider（IAgentProvider 实现）
 ├── executor.ts         # executeEdits() / revertEdits() —— 编辑应用与回滚
 ├── parser.ts           # parseEditsFromText() —— 解析 <edit path="...">…</edit>
-├── context.ts          # buildContextPrompt() —— 上下文组装
 ├── logger.ts           # createLogger() / runWithContext() —— 结构化日志
 ├── log-categories.ts   # LOG_CATEGORY 日志分类常量
-├── loop.ts             # AgentLoop（@deprecated，请使用 AgentRuntime）
 ├── cli.ts              # 交互式 CLI Agent（支持 MCP 工具）
 └── types/              # 类型定义（agent / message / filesystem / tool / provider / edit）
 ```
@@ -71,7 +67,7 @@ src/
 | `LOG_CATEGORY` / `LogCategory` | `log-categories.ts` | 日志分类 |
 | 核心类型 | `types/*` | `AgentContext` / `SessionMessage` / `AgentEditResult` / `IAgentFileSystem` / `ITool` 等 |
 
-> 未列在 `index.ts` 中的导出（`Agent`、`Session`、`ToolRegistry`、各 `Tool`、`OpenAILikeProvider` 等）属于内部实现，不应被外部直接引用。
+> 未列在 `index.ts` 中的导出（`Agent`、`Session`、`ToolRegistry`、各 `Tool` 等）属于内部实现，不应被外部直接引用。
 
 ## 核心模块
 
@@ -159,4 +155,4 @@ if (result.edits.length > 0) {
 - **TypeScript 严格模式**，编译目标 ES2022，生成声明文件与 Source Map
 - 通过 `package.json` 的 `exports` 字段同时支持 ESM 与 CJS 引用
 - 构建：`npm run build -w packages/agent`（`tsc`）；监听：`npm run dev -w packages/agent`
-- CLI：根目录 `npm run cli`；MCP 集成测试：`npm run mcp:test`
+- CLI：根目录 `npm run cli`

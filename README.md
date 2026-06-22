@@ -75,8 +75,8 @@ npm run build:electron  # Electron 主进程
 |---|------|------|------|
 | 8 | Agent 对话面板 | ✅ | `AgentPanel.vue`, 支持 chat/edit/agent 三种模式、Markdown + KaTeX 渲染、多 Provider 配置管理 |
 | 9 | Agent 消息流式输出 (SSE) | ✅ | Server SSE + 前端 stream 解析已完整打通; 支持真实 LLM 流式响应 |
-| 10 | Agent 生成编辑操作并应用到文件 | ⚠️ | `<edit>` 区块解析 → 文件写入流程已打通; 服务端 `/api/agent/apply-edits` 端点已实现但前端未调用 `executor.ts`; 编辑/Agent 模式的 system prompt 在 `@vibeeditor/agent` 的 `provider.ts` 中被硬编码为 `chat` 模式 (Bug) |
-| 11 | Agent 上下文构建 (打开文件+光标+选区) | ✅ | `@vibeeditor/agent` — `buildContextPrompt()` 已实现; 但前端 `useAgent.ts` 未填充 `openFiles`, `fileTree` 等上下文到请求中 |
+| 10 | Agent 生成编辑操作并应用到文件 | ⚠️ | `<edit>` 区块解析 → 文件写入流程已打通; 服务端 `/api/agent/apply-edits` 端点已实现但前端未调用 `executor.ts`; 编辑/Agent 模式的 system prompt 在 `@vibeeditor/agent` 中被硬编码为 `chat` 模式 (Bug) |
+| 11 | Agent 上下文构建 (打开文件+光标+选区) | ✅ | `@vibeeditor/agent` — 上下文已在 Agent 消息构造内联组装; 但前端 `useAgent.ts` 未填充 `openFiles`, `fileTree` 等上下文到请求中 |
 | 12 | 编辑操作撤销/重做 | ⚠️ | `@vibeeditor/agent` — `revertEdits()` 已实现; 前端未接入 UI |
 | 13 | LLM 后端对接 (OpenAI / Anthropic / etc.) | ⚠️ | 已通过 raw fetch 对接 OpenAI 兼容 API (支持 Ollama / vLLM 等); 无 SDK 依赖; 编辑/Agent 模式 system prompt 硬编码 bug (#10) 待修复 |
 
@@ -365,7 +365,6 @@ tools.forEach(t => agent.registerTool(t));
 - Server SSE 端点（`routes/agent.ts`）从请求体读取 `mcpConfig`，连接服务器并将工具注册到 Agent
 - CLI（`cli.ts`）支持交互式 MCP 工具调用
 - 前端 `McpSettingsPanel.vue` 管理 MCP 服务器配置
-- `npm run mcp:test` 运行跨三种传输模式的集成测试
 
 ## 环境变量
 

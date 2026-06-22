@@ -25,8 +25,7 @@
     "lint": "eslint packages/*/src --ext .ts,.tsx,.vue",
     "typecheck": "tsc -b",
     "cli": "npx tsx packages/agent/src/cli.ts",
-    "mcp:cli": "npx tsx packages/agent/src/cli.ts",
-    "mcp:test": "node --import tsx packages/agent/src/mcp/__test.ts"
+    "mcp:cli": "npx tsx packages/agent/src/cli.ts"
   },
   "devDependencies": {
     "@types/node": "^20.19.41",

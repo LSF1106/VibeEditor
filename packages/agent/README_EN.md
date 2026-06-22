@@ -27,16 +27,13 @@ src/
 ├── session.ts          # Session — main/sub-agent orchestration, <delegate>, streaming
 ├── tool-registry.ts    # ToolRegistry — registration, lookup, system-prompt generation
 ├── tools/              # 5 default tools (read_file, list_dir, search_code, bash, delegate)
-├── mcp/                # McpManager, MCPClient, MCPToolAdapter, ToolCatalog, config, tests
+├── mcp/                # McpManager, MCPClient, MCPToolAdapter, ToolCatalog, config
 ├── llm/                # LLMGateway — provider CRUD + persistence (llm-settings.json)
 ├── openai-client.ts    # createOpenAILLMProvider() / buildMessages() / resolveLLMConfig()
-├── provider.ts         # OpenAILikeProvider (IAgentProvider implementation)
 ├── executor.ts         # executeEdits() / revertEdits()
 ├── parser.ts           # parseEditsFromText() — parses <edit path="...">…</edit>
-├── context.ts          # buildContextPrompt()
 ├── logger.ts           # createLogger() / runWithContext()
 ├── log-categories.ts   # LOG_CATEGORY constants
-├── loop.ts             # AgentLoop (@deprecated, use AgentRuntime)
 ├── cli.ts              # Interactive CLI agent (MCP-aware)
 └── types/              # Type definitions (agent / message / filesystem / tool / provider / edit)
 ```
@@ -56,7 +53,7 @@ src/
 | `LOG_CATEGORY` / `LogCategory` | `log-categories.ts` | Log categories |
 | Core types | `types/*` | `AgentContext` / `SessionMessage` / `AgentEditResult` / `IAgentFileSystem` / `ITool`, etc. |
 
-> Exports not listed in `index.ts` (`Agent`, `Session`, `ToolRegistry`, individual tools, `OpenAILikeProvider`, …) are internal and should not be imported directly.
+> Exports not listed in `index.ts` (`Agent`, `Session`, `ToolRegistry`, individual tools, …) are internal and should not be imported directly.
 
 ## Core modules
 
@@ -143,4 +140,4 @@ if (result.edits.length > 0) {
 - **TypeScript strict mode**, ES2022 target, declaration files and source maps emitted
 - Supports both ESM and CJS imports via the `exports` field in `package.json`
 - Build: `npm run build -w packages/agent` (`tsc`); watch: `npm run dev -w packages/agent`
-- CLI: `npm run cli` from the repo root; MCP integration tests: `npm run mcp:test`
+- CLI: `npm run cli` from the repo root

@@ -75,8 +75,8 @@ npm run build:electron  # Electron main process
 |---|---------|--------|-------|
 | 8 | Agent chat panel | ✅ | `AgentPanel.vue`, supports chat/edit/agent modes, Markdown + KaTeX rendering, multi-provider config management |
 | 9 | Agent streaming response (SSE) | ✅ | Server SSE + frontend stream parsing fully working with real LLM backend |
-| 10 | Agent generates edits and applies to files | ⚠️ | `<edit>` tag parsing → file writing pipeline works end-to-end; `/api/agent/apply-edits` endpoint exists on server but `executor.ts` from `@vibeeditor/agent` not wired to frontend; edit/agent mode system prompt hardcoded to `chat` in `@vibeeditor/agent` `provider.ts` (bug) |
-| 11 | Agent context builder (open files + cursor + selection) | ✅ | `@vibeeditor/agent` — `buildContextPrompt()` implemented; frontend `useAgent.ts` does not populate `openFiles`/`fileTree` context in requests |
+| 10 | Agent generates edits and applies to files | ⚠️ | `<edit>` tag parsing → file writing pipeline works end-to-end; `/api/agent/apply-edits` endpoint exists on server but `executor.ts` from `@vibeeditor/agent` not wired to frontend; edit/agent mode system prompt hardcoded to `chat` in `@vibeeditor/agent` (bug) |
+| 11 | Agent context builder (open files + cursor + selection) | ✅ | `@vibeeditor/agent` — context is assembled inline within the Agent's message construction; frontend `useAgent.ts` does not populate `openFiles`/`fileTree` context in requests |
 | 12 | Edit undo / redo | ⚠️ | `@vibeeditor/agent` — `revertEdits()` implemented; not wired to frontend UI |
 | 13 | LLM backend integration (OpenAI / Anthropic / etc.) | ⚠️ | OpenAI-compatible API via raw fetch (works with Ollama, vLLM, etc.); no SDK dependencies; edit/agent mode system prompt bug (#10) needs fix |
 
@@ -365,7 +365,6 @@ tools.forEach(t => agent.registerTool(t));
 - Server SSE endpoint (`routes/agent.ts`) reads `mcpConfig` from request body, connects servers, registers MCP tools on the Agent
 - CLI (`cli.ts`) supports interactive MCP tools
 - Frontend `McpSettingsPanel.vue` manages MCP server configurations
-- `npm run mcp:test` runs integration tests across all three transports
 
 ## Environment Variables
 
