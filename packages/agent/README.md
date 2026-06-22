@@ -155,4 +155,4 @@ if (result.edits.length > 0) {
 - **TypeScript 严格模式**，编译目标 ES2022，生成声明文件与 Source Map
 - 通过 `package.json` 的 `exports` 字段同时支持 ESM 与 CJS 引用
 - 构建：`npm run build -w packages/agent`（`tsc`）；监听：`npm run dev -w packages/agent`
-- CLI：根目录 `npm run cli`
+- CLI：根目录 `npm run cli`；通过 `npm run cli -- --url <apiUrl> --model <model> --key <apiKey>` 传入待测模型（也可用环境变量 `LLM_API_URL`/`LLM_MODEL`/`LLM_API_KEY`）

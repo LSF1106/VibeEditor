@@ -29,7 +29,12 @@ npm install
 
 ```bash
 npm run cli          # 交互式 Agent CLI（支持 MCP 工具）
+
+# 传入待测试的模型信息（命令行参数 > 环境变量 LLM_API_URL/LLM_MODEL/LLM_API_KEY > 内置默认值）
+npm run cli -- --url https://api.deepseek.com/v1 --model deepseek-v4-flash --key sk-xxxx
 ```
+
+> CLI 不再内置硬编码的 API Key，需通过 `--key` 或环境变量 `LLM_API_KEY` 提供。模型信息最终通过 `AgentRuntime` 进行调用。
 
 ### 构建
 

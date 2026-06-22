@@ -140,4 +140,4 @@ if (result.edits.length > 0) {
 - **TypeScript strict mode**, ES2022 target, declaration files and source maps emitted
 - Supports both ESM and CJS imports via the `exports` field in `package.json`
 - Build: `npm run build -w packages/agent` (`tsc`); watch: `npm run dev -w packages/agent`
-- CLI: `npm run cli` from the repo root
+- CLI: `npm run cli` from the repo root; pass the model under test via `npm run cli -- --url <apiUrl> --model <model> --key <apiKey>` (or env vars `LLM_API_URL`/`LLM_MODEL`/`LLM_API_KEY`)

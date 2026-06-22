@@ -29,7 +29,12 @@ To **test the agent module on its own** (without launching the editor UI), use t
 
 ```bash
 npm run cli          # Interactive Agent CLI (supports MCP tools)
+
+# Pass the model under test (CLI flags > env vars LLM_API_URL/LLM_MODEL/LLM_API_KEY > built-in defaults)
+npm run cli -- --url https://api.deepseek.com/v1 --model deepseek-v4-flash --key sk-xxxx
 ```
+
+> The CLI no longer ships a hardcoded API key — provide one via `--key` or the `LLM_API_KEY` env var. The model is invoked through `AgentRuntime`.
 
 ### Build
 

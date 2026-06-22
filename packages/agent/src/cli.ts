@@ -8,6 +8,9 @@
  *   npx tsx cli.ts --no-mcp                 # 跳过 MCP，仅使用内置工具
  *   npx tsx cli.ts --config mcp-config.json # 指定 MCP 配置文件
  *   npx tsx cli.ts --root /path/to/project  # 设置工作目录
+ *   npx tsx cli.ts --url <apiUrl> --model <model> --key <apiKey> # 指定 LLM 模型信息
+ *
+ * LLM 配置优先级: 命令行参数 (--url/--model/--key) > 环境变量 (LLM_API_URL/LLM_MODEL/LLM_API_KEY) > 内置默认值
  */
 
 import * as readline from 'readline';
@@ -22,16 +25,36 @@ import type { McpToolInfo } from './mcp/manager';
 
 // ====================== LLM 配置 ======================
 
-const PROVIDER_CONFIG = {
+interface ProviderConfig {
+  apiUrl: string;
+  apiKey: string;
+  model: string;
+}
+
+const DEFAULT_PROVIDER: ProviderConfig = {
   apiUrl: 'https://api.deepseek.com/v1',
-  apiKey: 'sk-2d20e6d859c843f8852a82c56fdecfcb',
+  apiKey: '',
   model: 'deepseek-v4-flash',
 };
 
-function buildRuntimeConfig(workDir: string, mcpServers?: McpServerEntry[]): AgentRuntimeConfig {
+function resolveProviderConfig(args: CliArgs): ProviderConfig {
+  const apiUrl = args.apiUrl || process.env.LLM_API_URL || DEFAULT_PROVIDER.apiUrl;
+  const apiKey = args.apiKey || process.env.LLM_API_KEY || DEFAULT_PROVIDER.apiKey;
+  const model = args.model || process.env.LLM_MODEL || DEFAULT_PROVIDER.model;
+
+  if (!apiKey) {
+    console.error('\n❌ 缺少 API Key。请通过 --key <apiKey> 传入，或设置环境变量 LLM_API_KEY。');
+    console.error('   示例: npm run cli -- --url https://api.deepseek.com/v1 --model deepseek-v4-flash --key sk-xxx\n');
+    process.exit(1);
+  }
+
+  return { apiUrl, apiKey, model };
+}
+
+function buildRuntimeConfig(provider: ProviderConfig, workDir: string, mcpServers?: McpServerEntry[]): AgentRuntimeConfig {
   return {
     mode: 'build',
-    provider: PROVIDER_CONFIG,
+    provider,
     workspaceRoot: workDir,
     mcpServers,
     maxTurns: 15,
@@ -92,13 +115,14 @@ function buildContext(): AgentContext {
   };
 }
 
-async function runAgentLoop(mcpManager: McpManager | null, mcpServers: McpServerEntry[], workDir: string): Promise<void> {
-  const runtime = new AgentRuntime(buildRuntimeConfig(workDir, mcpServers));
+async function runAgentLoop(provider: ProviderConfig, mcpManager: McpManager | null, mcpServers: McpServerEntry[], workDir: string): Promise<void> {
+  const runtime = new AgentRuntime(buildRuntimeConfig(provider, workDir, mcpServers));
   await runtime.initialize();
 
   const mcpStatus = runtime.mcpStatus;
 
-  console.log(`\n🤖 Model: ${PROVIDER_CONFIG.model}`);
+  console.log(`\n🤖 Model: ${provider.model}`);
+  console.log(`🌐 API: ${provider.apiUrl}`);
   console.log(`🔧 Tools: 5 (built-in)${mcpStatus.serverCount ? ` + ${mcpStatus.serverCount} MCP server(s), ${mcpStatus.toolCount} tool(s)` : ''}`);
   console.log(`📁 Work dir: ${workDir}`);
   console.log('Commands: /exit, /clear, /tools\n');
@@ -138,22 +162,38 @@ async function runAgentLoop(mcpManager: McpManager | null, mcpServers: McpServer
     process.stdout.write('\n🤖 AI> ');
     const startTime = Date.now();
 
+    let thinking = false;
+    const clearThinking = () => {
+      if (thinking) {
+        process.stdout.write('\r\x1b[K');
+        thinking = false;
+      }
+    };
+
     try {
       const result = await runtime.chatStream(trimmed, buildContext(), (e: AgentRuntimeEvent) => {
         switch (e.type) {
           case 'thinking':
-            process.stdout.write(`\n💭 `);
+            if (!thinking) {
+              process.stdout.write('\n💭 思考中...');
+              thinking = true;
+            }
             break;
           case 'chunk':
-            if (e.text) process.stdout.write(e.text);
+            if (e.text) {
+              clearThinking();
+              process.stdout.write(e.text);
+            }
             break;
           case 'tool_start':
+            clearThinking();
             process.stdout.write(`\n\n🔧 [${e.toolName}]${e.toolLabel ? ' ' + e.toolLabel : ''} `);
             break;
           case 'tool_end':
             process.stdout.write(`✅`);
             break;
           case 'error':
+            clearThinking();
             process.stdout.write(`\n❌ ${e.error || 'unknown error'}`);
             break;
         }
@@ -274,6 +314,9 @@ interface CliArgs {
   configPath?: string;
   noMcp: boolean;
   workDir: string;
+  apiUrl?: string;
+  apiKey?: string;
+  model?: string;
 }
 
 function parseArgs(argv: string[]): CliArgs {
@@ -295,6 +338,15 @@ function parseArgs(argv: string[]): CliArgs {
         break;
       case '--root':
         result.workDir = path.resolve(argv[++i]);
+        break;
+      case '--url':
+        result.apiUrl = argv[++i];
+        break;
+      case '--key':
+        result.apiKey = argv[++i];
+        break;
+      case '--model':
+        result.model = argv[++i];
         break;
       default:
         if (!argv[i].startsWith('--') && !result.configPath) {
@@ -351,6 +403,7 @@ async function main(): Promise<void> {
 
     case 'agent':
     default: {
+      const provider = resolveProviderConfig(args);
       let mcpManager: McpManager | null = null;
       let activeServers = mcpServers;
       if (!args.noMcp && mcpServers.length > 0) {
@@ -364,7 +417,7 @@ async function main(): Promise<void> {
           console.error('Continuing with built-in tools only.\n');
         }
       }
-      await runAgentLoop(mcpManager, activeServers, args.workDir);
+      await runAgentLoop(provider, mcpManager, activeServers, args.workDir);
       break;
     }
   }
