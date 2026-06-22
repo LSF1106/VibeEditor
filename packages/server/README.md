@@ -39,7 +39,7 @@ npm run dev -w packages/server
 npm run build -w packages/server
 node packages/server/dist/run.js
 
-# 通过根目录脚本（自动先构建 agent + core）
+# 通过根目录脚本（自动先构建 agent）
 npm run dev:server
 npm run dev:all      # server + web 同时启动
 ```
@@ -1422,8 +1422,7 @@ while (true) {
 
 | 包 | 用途 |
 |----|------|
-| `@vibeeditor/agent` | Agent Provider、Session、MCP Manager、LLM Gateway |
-| `@vibeeditor/core` | `LocalFileSystem`、`FileEntry` 类型 |
+| `@vibeeditor/agent` | AgentRuntime、MCP Manager、LLM Gateway、结构化日志 |
 | `express` | HTTP 框架 |
 | `cors` | 跨域支持 |
 

@@ -1,134 +1,146 @@
 # @vibeeditor/agent
 
-Standalone AI Agent framework for VibeEditor — provides LLM Provider, Agent Loop, tool execution, and core agent capabilities.
+> [中文](README.md)
 
-## Design Principles
+Standalone AI agent framework for VibeEditor — a unified agent runtime, LLM provider management, multi-turn tool-calling loop, MCP client, and edit execution.
 
-- **Zero dependencies**: No dependency on `@vibeeditor/core` or other workspace packages, only TypeScript compiler needed
-- **Platform agnostic**: Decoupled from file system via `IAgentFileSystem` interface, runs in both Node.js and browsers
-- **Interface-driven**: All core functionality exposed through interfaces for easy extension and replacement
+## Design principles
 
-## Directory Structure
+- **Platform-agnostic**: decoupled from the file system via the `IAgentFileSystem` interface (`readFile` / `writeFile` / `exists` / `readDir`), runnable inside a Node.js server or the Electron main process
+- **No workspace dependencies**: depends on no other `@vibeeditor/*` package — only the `openai` SDK and the MCP SDK
+- **Single entry point**: only a small public surface (`AgentRuntime` etc.) is exported; internals (`Agent` / `Session` / tools) are not exposed directly
+
+## Dependencies
+
+| Package | Purpose |
+|---------|---------|
+| `openai` (v6) | OpenAI-compatible Chat Completions calls |
+| `@modelcontextprotocol/sdk` | MCP client (STDIO / SSE / HTTP transports) |
+
+## Directory layout
 
 ```
 src/
-├── index.ts       # Barrel export entry point
-├── types/
-│   ├── edit.ts        # TextSelection, EditOperation
-│   ├── message.ts     # AgentEditResult, AgentMessage
-│   ├── agent.ts       # AgentMode, AgentConfig, AgentContext
-│   ├── provider.ts    # IAgentProvider
-│   └── filesystem.ts  # FileEntry, IAgentFileSystem
-├── context.ts     # Context construction utilities
-├── executor.ts    # Edit execution engine
-├── parser.ts      # LLM response parser
-├── provider.ts    # OpenAI-compatible LLM Provider
-└── loop.ts        # Multi-turn autonomous coding Agent Loop
+├── index.ts            # Public API barrel
+├── runtime.ts          # AgentRuntime — unified entry (plan/build, sessions, MCP)
+├── agent.ts            # Agent — single-agent multi-turn tool loop
+├── session.ts          # Session — main/sub-agent orchestration, <delegate>, streaming
+├── tool-registry.ts    # ToolRegistry — registration, lookup, system-prompt generation
+├── tools/              # 5 default tools (read_file, list_dir, search_code, bash, delegate)
+├── mcp/                # McpManager, MCPClient, MCPToolAdapter, ToolCatalog, config, tests
+├── llm/                # LLMGateway — provider CRUD + persistence (llm-settings.json)
+├── openai-client.ts    # createOpenAILLMProvider() / buildMessages() / resolveLLMConfig()
+├── provider.ts         # OpenAILikeProvider (IAgentProvider implementation)
+├── executor.ts         # executeEdits() / revertEdits()
+├── parser.ts           # parseEditsFromText() — parses <edit path="...">…</edit>
+├── context.ts          # buildContextPrompt()
+├── logger.ts           # createLogger() / runWithContext()
+├── log-categories.ts   # LOG_CATEGORY constants
+├── loop.ts             # AgentLoop (@deprecated, use AgentRuntime)
+├── cli.ts              # Interactive CLI agent (MCP-aware)
+└── types/              # Type definitions (agent / message / filesystem / tool / provider / edit)
 ```
 
-## Module Details
+## Public API (`index.ts`)
 
-### 1. Type System (`types/`)
+| Export | Source | Purpose |
+|--------|--------|---------|
+| `AgentRuntime` | `runtime.ts` | **Unified entry**: wraps plan/build modes, session management, and MCP |
+| `AgentRuntimeConfig` / `AgentRuntimeEvent` / `ChatResult` | `runtime.ts` | Runtime config and streaming event types |
+| `executeEdits` / `revertEdits` / `ExecutionResult` | `executor.ts` | Apply / revert AI-generated file edits |
+| `parseEditsFromText` / `ParsedEdit` | `parser.ts` | Extract `<edit>` blocks from an LLM reply |
+| `LLMGateway` / `maskApiKey` / `LLMProvider` / `LLMSettings` | `llm/gateway.ts` | LLM provider configuration management (persisted) |
+| `McpManager` / `McpToolInfo` | `mcp/manager.ts` | MCP multi-server connection management |
+| MCP config types | `mcp/config.ts` | `McpServerConfig` / `McpConfig` / `McpServerEntry`, etc. |
+| `createLogger` / `runWithContext` / `Logger` | `logger.ts` | Structured logging |
+| `LOG_CATEGORY` / `LogCategory` | `log-categories.ts` | Log categories |
+| Core types | `types/*` | `AgentContext` / `SessionMessage` / `AgentEditResult` / `IAgentFileSystem` / `ITool`, etc. |
 
-All agent-related types split by responsibility into separate files, self-contained with no external dependencies:
+> Exports not listed in `index.ts` (`Agent`, `Session`, `ToolRegistry`, individual tools, `OpenAILikeProvider`, …) are internal and should not be imported directly.
 
-| File | Types | Description |
-|------|-------|-------------|
-| `types/edit.ts` | `TextSelection`, `EditOperation` | Text selection range, edit operation (insert / delete / replace) |
-| `types/message.ts` | `AgentEditResult`, `AgentMessage` | Edit result, chat message |
-| `types/agent.ts` | `AgentMode`, `AgentConfig`, `AgentContext` | Work mode, runtime config, environment snapshot |
-| `types/provider.ts` | `IAgentProvider` | AI backend plugin contract (initialize, sendMessage, streamMessage, dispose) |
-| `types/filesystem.ts` | `FileEntry`, `IAgentFileSystem` | File entry, minimal file system interface for agent needs |
+## Core modules
 
-### 2. Context Builder (`context.ts`)
+### AgentRuntime (`runtime.ts`)
 
-| Function | Description |
-|----------|-------------|
-| `createEmptyContext()` | Create an empty agent context |
-| `buildContextPrompt(context)` | Assemble context into structured Markdown prompt |
-| `getConversationSummary(messages, maxMessages?)` | Conversation history summary |
+The single recommended entry point. One `AgentRuntime` instance is bound to a workspace root and caches multiple `Session`s keyed by `sessionId`.
 
-### 3. Edit Execution Engine (`executor.ts`)
+| Capability | Notes |
+|------------|-------|
+| `chat()` / `chatStream()` | One-shot / SSE streaming conversation |
+| **plan mode** | Calls the LLM directly (`createOpenAILLMProvider` + `buildMessages`), no tools, default `maxTurns=10` |
+| **build mode** | Creates `Agent` + `Session`, runs the autonomous multi-turn tool loop, default `maxTurns=20` |
+| MCP | In `build` mode connects MCP servers from `mcpServers` and injects their tools; `reinitialize()` for hot reload |
+| Sessions | `getSessionMessages` / `restoreSession` / `getSessionIds` / `deleteSession` |
+| File system | When no `fileSystem` is provided, a default implementation with path-traversal protection is created from `workspaceRoot` |
+| `applyEdits()` | Writes edits to the file system via `executeEdits` |
 
-| Function | Description |
-|----------|-------------|
-| `executeEdits(fs, edits)` | Batch apply edits, returns `ExecutionResult` |
-| `revertEdits(content, operations)` | Reverse edits by flipping insert ↔ delete |
+**Streaming events** (`AgentRuntimeEvent.type`): `chunk` / `thinking` / `tool_start` / `tool_end` / `tool_result` / `done` / `error`.
 
-### 4. Parser (`parser.ts`)
+### Agent + Session (`agent.ts` / `session.ts`)
 
-| Function | Description |
-|----------|-------------|
-| `parseToolCalls(text)` | Parse `<read_file>`, `<list_dir>`, `<search_code>` tool calls from LLM output |
-| `parseEditsFromText(text)` | Parse `<edit path="...">...</edit>` edit blocks from LLM output |
+- `Agent`: a single agent's multi-turn loop — build system prompt → call LLM → parse tool calls → execute tools → feed results back → repeat, until no tool calls remain or `maxTurns` is reached.
+- `Session`: orchestrates the main agent and delegates sub-tasks to sub-agents via the `<delegate>` tag; exposes `start()` / `startStream()`.
 
-### 5. LLM Provider (`provider.ts`)
+### Default tools (`tools/`)
 
-`OpenAILikeProvider` implements `IAgentProvider`:
+`createDefaultTools()` returns 5 tools:
 
-- Uses native `fetch`, no third-party SDK dependencies
-- Supports OpenAI, Ollama, vLLM, or any OpenAI-compatible API
-- Non-streaming `chat()` and streaming `chatStream()` (SSE parsing)
-- Config priority: explicit > `LLM_API_URL` / `LLM_API_KEY` / `LLM_MODEL` env vars > defaults
-- Implements both `sendMessage()` and `streamMessage()` interfaces
+| Tool | Tag | Purpose |
+|------|-----|---------|
+| `ReadFileTool` | `<read_file path="..."/>` | Read a file |
+| `ListDirTool` | `<list_dir path="..."/>` | List directory contents |
+| `SearchCodeTool` | `<search_code pattern="..."/>` | Search code |
+| `BashTool` | `<bash>...</bash>` | Run a shell command |
+| `DelegateTool` | `<delegate>...</delegate>` | Delegate to a sub-agent |
 
-### 6. Agent Loop (`loop.ts`)
+### LLM Gateway (`llm/gateway.ts`)
 
-`AgentLoop` implements a multi-turn autonomous coding loop:
+`LLMGateway` manages LLM provider configurations (`LLMProvider`): CRUD, active-provider selection, connectivity/model-list testing, persisted to `configDir/llm-settings.json`. `maskApiKey()` redacts API keys in responses.
 
-1. Build system prompt (role, tool instructions, edit format, behavior rules)
-2. Inject context (open files, file tree, cursor, selection, conversation history)
-3. Per turn: call LLM → parse tool calls → execute tools → feed results back → next turn
-4. Max 15 turns; loop ends when LLM produces no tool calls
+### MCP client (`mcp/`)
 
-Supported tools:
-- `<read_file path="..."/>` — Read file contents
-- `<list_dir path="..."/>` — List directory contents
-- `<search_code pattern="..." [path="..." maxResults="20"]/>` — Search code
+| Class | Purpose |
+|-------|---------|
+| `McpManager` | Multi-server lifecycle: `connectAll` → `discoverAndCreateAdapters` → routed calls → `disconnectAll` |
+| `MCPClient` | Single-server connection (initialize / `tools/list` / `tools/call`) |
+| `MCPToolAdapter` | Bridges an MCP `tools/call` to `ITool`, with automatic argument coercion |
+| `ToolCatalog` | Read-only flat tool-metadata store for display / CLI output |
 
-File system access is abstracted behind `IAgentFileSystem`, decoupling the loop from platform specifics.
+Transports: **STDIO** (local subprocess) / **HTTP** (stateless POST) / **SSE** (auto-extracts `Mcp-Session-Id`).
 
-## Usage
+## Usage example
 
 ```typescript
-import {
-  OpenAILikeProvider,
-  AgentLoop,
-  createEmptyContext,
-  executeEdits,
-  parseEditsFromText,
-  parseToolCalls
-} from '@vibeeditor/agent';
+import { AgentRuntime, executeEdits } from '@vibeeditor/agent';
 
-// 1. Create LLM Provider
-const provider = new OpenAILikeProvider();
-await provider.initialize({
+// 1. Create the runtime (build mode: multi-turn tool loop)
+const runtime = new AgentRuntime({
   mode: 'build',
-  apiUrl: 'https://api.openai.com/v1',
-  apiKey: 'sk-...',
-  model: 'gpt-4o'
+  provider: { apiUrl: 'https://api.openai.com/v1', apiKey: 'sk-...', model: 'gpt-4o' },
+  workspaceRoot: '/path/to/project',
+  // mcpServers: [...]  // optional, connected in build mode
 });
 
-// 2. Build context
-const context = createEmptyContext();
-context.openFiles = [{ path: 'src/app.ts', content: '...' }];
-context.fileTree = ['src/app.ts', 'src/utils.ts'];
+// 2. Stream a conversation
+const result = await runtime.chatStream(
+  'Implement a login feature',
+  { openFiles: [{ path: 'src/app.ts', content: '...' }], fileTree: '...' },
+  (event) => {
+    if (event.type === 'chunk') process.stdout.write(event.text ?? '');
+  }
+);
 
-// 3. Run Agent Loop (requires IAgentFileSystem implementation)
-const fs = new MyFileSystem();
-const loop = new AgentLoop(fs);
-await loop.run(provider, { mode: 'build' }, 'Implement login feature', context, (data) => {
-  console.log('SSE event:', data);
-});
-
-// 4. Or use lower-level APIs directly
-const reply = await provider.sendMessage('Analyze this code', context);
-const edits = parseEditsFromText(reply.content);
-await executeEdits(fs, edits);
+// 3. Apply the parsed edits
+if (result.edits.length > 0) {
+  await runtime.applyEdits(
+    result.edits.map(e => ({ path: e.path, operation: 'modify', content: e.content }))
+  );
+}
 ```
 
-## Technical Details
+## Technical notes
 
-- **Zero runtime dependencies** — only `typescript` as a dev dependency
-- **TypeScript strict mode** — compilation target ES2022, generates declarations and source maps
-- **Dual module format** — supports both ESM and CJS via `package.json` `exports` field
+- **TypeScript strict mode**, ES2022 target, declaration files and source maps emitted
+- Supports both ESM and CJS imports via the `exports` field in `package.json`
+- Build: `npm run build -w packages/agent` (`tsc`); watch: `npm run dev -w packages/agent`
+- CLI: `npm run cli` from the repo root; MCP integration tests: `npm run mcp:test`

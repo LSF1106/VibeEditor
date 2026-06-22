@@ -6,6 +6,53 @@
 
 ![VibeEditor Screenshot](images/app_ui.png)
 
+## 快速开始 · 构建与部署
+
+### 安装
+
+```bash
+npm install
+```
+
+### 开发
+
+开发模式只有**两种**：
+
+| 模式 | 命令 | 说明 |
+|------|------|------|
+| **Server（前后端分离）** | `npm run dev:all` | 同时启动 Express 后端（`http://localhost:20385`）与 Vite 前端（`http://localhost:5173`），二者通过 `/api` 代理通信；适用于浏览器 / 远程部署场景 |
+| **Electron 桌面端** | `npm run dev:electron` | 自动启动 Vite 前端 + Electron 窗口；本地文件通过主进程 IPC 读写（`main.ts` 入口） |
+
+> 两条命令都会先自动构建 `@vibeeditor/agent`。
+
+如果只想**单独测试 Agent 模块**（不启动编辑器界面），可使用交互式 CLI：
+
+```bash
+npm run cli          # 交互式 Agent CLI（支持 MCP 工具）
+```
+
+### 构建
+
+```bash
+npm run build:all       # 构建所有包（agent → web → server → electron）
+
+# 或单独构建
+npm run build:agent     # AI Agent 框架
+npm run build:server    # Express 后端
+npm run build:web       # Vue 前端（输出到 packages/web/dist/）
+npm run build:electron  # Electron 主进程
+```
+
+### 部署
+
+| 目标 | 命令 | 说明 |
+|------|------|------|
+| **Server 部署** | `npm run build:all` + `SERVE_STATIC` | 构建后设置环境变量 `SERVE_STATIC` 指向 `packages/web/dist` 启动服务端，由 Express 同时托管前端与 API |
+| **Electron 免安装目录** | `npm run pack:electron` | electron-builder `--dir` 模式：仅产出解包后的应用目录，**不生成安装程序**，用于本地验证打包结果 |
+| **Electron 安装程序** | `npm run dist:electron` | electron-builder 完整打包：生成可分发的 **Windows NSIS 安装程序** |
+
+> Electron 有两个主进程入口：`main.ts`（标准窗口，IPC 文件操作）与 `main-server.ts`（内嵌 Express 服务端），详见 [packages/electron/README.md](packages/electron/README.md)。前端会在运行时自动检测环境（Electron / Server / Browser），在 `packages/web/src/services/fileService.ts` 中选择合适的文件服务。
+
 ## 功能需求与开发进度
 
 > **图例**: ✅ 已完成 &nbsp; ⚠️ 框架就绪，待实现 &nbsp; ❌ 未开始
@@ -37,7 +84,7 @@
 
 | # | 功能 | 状态 | 说明 |
 |---|------|------|------|
-| 14 | 三种文件系统实现 (`IFileSystem`) | ✅ | `LocalFileSystem` / `ServerFileSystem` / `VirtualFileSystem` |
+| 14 | 三种文件系统实现 | ✅ | `LocalFileSystem`（server `fs/`）+ 浏览器 FSA 客户端 + REST 客户端（web `fileService.ts`） |
 | 15 | 运行时环境自动检测 | ✅ | `fileService.ts` → 检测 Electron / Server / Browser |
 | 16 | 文件/文件夹重命名 | ✅ | 底层 API 已实现; 右键上下文菜单已集成 |
 | 17 | 文件/文件夹删除 | ✅ | 底层 API 已实现; 右键上下文菜单已集成 |
@@ -107,36 +154,34 @@
 
 ```mermaid
 graph TD
-    agent["@vibeeditor/agent<br/>AI Agent 框架<br/><br/>· Agent / Session / ToolRegistry<br/>· IAgentProvider / ILLMProvider<br/>· MCP Client (STDIO/HTTP/SSE)<br/>· executeEdits / parseToolCalls"]
-    core["@vibeeditor/core<br/>共享核心<br/><br/>· IFileSystem<br/>· LocalFileSystem / ServerFS / VirtualFS<br/>· EditorTab / EditOperation<br/>· EditorState 管理"]
-    server["@vibeeditor/server<br/>Express 后端<br/><br/>· /api/files/* REST API<br/>· /api/agent/* SSE 流式<br/>· 路径遍历防护"]
-    web["@vibeeditor/web<br/>Vue 3 前端<br/><br/>· Monaco Editor 封装<br/>· AgentPanel 聊天 UI<br/>· useAgent / useFileSystem<br/>· agentService SSE 客户端"]
-    electron["@vibeeditor/electron<br/>Electron 桌面壳<br/><br/>· IPC 桥接 (preload.ts)<br/>· 原生文件对话框<br/>· 主进程 fs 操作"]
+    agent["@vibeeditor/agent<br/>AI Agent 框架<br/><br/>· AgentRuntime（统一入口）<br/>· Agent / Session / ToolRegistry<br/>· LLMGateway / MCP Client (STDIO/HTTP/SSE)<br/>· executeEdits / parseEditsFromText"]
+    server["@vibeeditor/server<br/>Express 后端<br/><br/>· /api/files·agent·workspace·llm·mcp<br/>· LocalFileSystem（内置 fs/）<br/>· WorkspaceManager / 路径遍历防护"]
+    web["@vibeeditor/web<br/>Vue 3 前端<br/><br/>· Monaco Editor 封装 + 多格式查看器<br/>· AgentPanel 聊天 UI<br/>· useAgent / useFileSystem<br/>· agentService SSE 客户端"]
+    electron["vibeeditor-desktop<br/>Electron 桌面壳<br/><br/>· IPC 桥接 (preload.ts)<br/>· 原生文件对话框 / 菜单<br/>· main.ts / main-server.ts 双入口"]
 
-    agent --> core
     agent --> server
     agent --> web
-    core --> server
-    core --> web
-    core --> electron
+    agent --> electron
+    server --> electron
 ```
 
-**关键变化（相对旧架构）**：
-- **新增** `@vibeeditor/agent` —— Agent 相关代码从 `core` 和 `server` 中抽离，形成独立的智能体模块，含 MCP 客户端
-- **`@vibeeditor/core` 瘦身** —— 移除了 `agent/` 目录（types、context、executor），聚焦文件系统和编辑器状态
-- **`@vibeeditor/server` 瘦身** —— 移除了 `agent/` 目录（provider、loop），改为依赖 `@vibeeditor/agent`
-- **零外部依赖** —— `@vibeeditor/agent` 不依赖任何工作区包，通过 `IAgentFileSystem` 接口与平台解耦
+> 当前为 **4 个工作区包**（`agent` / `server` / `web` / `electron`），不存在 `@vibeeditor/core`。
+
+**架构要点**：
+- **`@vibeeditor/agent`** 是核心模块，对外统一入口为 `AgentRuntime`；不依赖任何工作区包，通过 `IAgentFileSystem` 接口与平台解耦
+- **文件系统实现内聚在使用方**：`LocalFileSystem`/`FileEntry` 位于 `@vibeeditor/server` 的 `fs/`；浏览器 FSA 客户端与 REST 客户端位于 `@vibeeditor/web` 的 `fileService.ts`；编辑器标签类型（`EditorTab`）位于 `@vibeeditor/web` 的 Pinia store
+- **`@vibeeditor/server`** 依赖 `@vibeeditor/agent`，提供文件 / Agent / 工作区 / LLM / MCP 全套 REST·SSE API
+- **`vibeeditor-desktop`**（Electron）可内嵌 `@vibeeditor/server`（`main-server.ts`），或仅用 IPC 文件操作（`main.ts`）
 
 ### 2. 架构图 — 包依赖与部署拓扑
 
 ```mermaid
 graph TB
     subgraph Packages["npm Workspace 包"]
-        agent["@vibeeditor/agent<br/>AI Agent 框架 · LLM Provider · 工具循环"]
-        core["@vibeeditor/core<br/>共享类型 / FS抽象 / 编辑器状态"]
-        server["@vibeeditor/server<br/>Express · REST API"]
-        web["@vibeeditor/web<br/>Vue 3 · Vite · Monaco"]
-        electron["@vibeeditor/electron<br/>Electron 壳 · IPC 桥接"]
+        agent["@vibeeditor/agent<br/>AI Agent 框架 · AgentRuntime · LLM/MCP · 工具循环"]
+        server["@vibeeditor/server<br/>Express · REST/SSE · LocalFileSystem · 工作区"]
+        web["@vibeeditor/web<br/>Vue 3 · Vite · Monaco · naive-ui"]
+        electron["vibeeditor-desktop<br/>Electron 壳 · IPC 桥接 · 内嵌服务端"]
     end
 
     subgraph Runtime["运行时环境"]
@@ -145,21 +190,19 @@ graph TB
         desktop["Electron 桌面<br/>原生 fs 对话框"]
     end
 
-    agent --> core
     agent --> server
     agent --> web
-    core --> server
-    core --> web
-    core --> electron
+    agent --> electron
+    server --> electron
     web -.->|dev proxy /api → :20385| server
     electron -->|加载 web/dist 或 Vite dev URL| web
     server -->|SERVE_STATIC 时提供| web
-    electron -->|IPC invoke| desktop
+    electron -->|IPC invoke / 内嵌 startServer| desktop
     server -->|fs 操作| node_srv
     web -->|File System Access API| browser
 ```
 
-**说明**：`@vibeeditor/agent` 是独立的 AI Agent 框架模块，提供 LLM Provider、Agent 循环和工具执行等核心能力。`@vibeeditor/core` 聚焦文件系统抽象和编辑器状态管理。前端 `web` 在开发时通过 Vite proxy 将 `/api` 转发到 `server`；Electron 模式下前端由 Electron 窗口加载，文件操作通过 `preload.ts` 暴露的 IPC 桥接到主进程的 Node.js `fs`。
+**说明**：`@vibeeditor/agent` 是独立的 AI Agent 框架，对外统一入口为 `AgentRuntime`，提供 LLM Provider 管理、多轮工具循环、MCP 客户端与编辑执行。`@vibeeditor/server` 依赖 agent，并自带 `LocalFileSystem`（`fs/`）与工作区管理。前端 `web` 在开发时通过 Vite proxy 将 `/api` 转发到 `server`；Electron 模式下前端由 Electron 窗口加载，文件操作通过 `preload.ts` 暴露的 IPC 桥接到主进程，或由 `main-server.ts` 内嵌的 Express 服务端提供。
 
 ### 3. 流程图
 
@@ -178,64 +221,56 @@ flowchart TD
     G --> H["useFileSystem() 初始化<br/>暴露 client / error / env"]
 ```
 
-**说明**：`detectEnvironment()` 在 `fileService.ts:22` 中一次性检测并缓存运行时环境，后续所有文件操作通过统一的 `FileServiceClient` 接口执行，上层组件不感知底层差异。
+**说明**：`detectEnvironment()` 在 `fileService.ts` 中按 `electron → browser → server` 顺序一次性检测并缓存运行时环境，后续所有文件操作通过统一的 `FileServiceClient` 接口执行，上层组件不感知底层差异。
 
-#### 3.2 Agent 编辑操作流程
+#### 3.2 Agent 对话与编辑流程
 
 ```mermaid
 flowchart TD
-    U["用户输入消息"] --> S["Server POST /api/agent/stream<br/>SSE 流式响应"]
-    S --> P["前端 stream 解析<br/>提取 &lt;edit&gt; 区块"]
-    P --> E["handleApplyEdits(edits)"]
-    E --> BK["备份原始文件内容到 editSnapshots<br/>记录到 lastEditedFiles"]
-    BK --> W["fs.client.writeFile()<br/>写入 AI 生成的新内容"]
-    W --> T["更新已打开 Tab<br/>或自动打开文件"]
-    T --> R["刷新文件树"]
-    R --> DONE["完成"]
+    U["用户输入消息"] --> M{"模式?"}
+    M -->|plan| PL["AgentRuntime 直接调用 LLM<br/>流式输出文本"]
+    M -->|build| BD["AgentRuntime + Session<br/>多轮工具循环（read_file / bash / …）"]
+    PL --> SSE["Server SSE：chunk / thinking / tool_* 事件"]
+    BD --> SSE
+    SSE --> DONE["done 事件携带 edits（ParsedEdit[]）"]
+    DONE --> AP["前端可选调用 applyEdits<br/>POST /api/agent/apply-edits"]
+    AP --> EX["executeEdits() 写入文件系统"]
+    EX --> RF["刷新编辑器 Tab + 文件树"]
 ```
 
-**说明**：Agent 的每一次编辑操作在写入磁盘前都会自动备份原文件内容，使得用户可以通过 `undoLastEdits()` 一键回退所有修改。
+**说明**：Agent 逻辑全部在 `@vibeeditor/agent` 的 `AgentRuntime` 中执行（服务端持有实例）。`plan` 模式直接流式调用 LLM；`build` 模式运行多轮工具循环。最终 `done` 事件携带从回复中解析出的 `<edit>` 块；编辑通过 `executeEdits()` 写入文件系统。
 
-### 4. 时序图 — Agent 编辑 & 撤销
+### 4. 时序图 — 工作区打开与 Agent 会话持久化
 
 ```mermaid
 sequenceDiagram
     actor User
-    participant AgentPanel
-    participant MainLayout
-    participant useFileSystem as useFileSystem<br/>(reactive)
-    participant Server
-    participant EditorStore
+    participant Web as Web (fileService)
+    participant Server as Server (/api/workspace)
+    participant WM as WorkspaceManager
+    participant Disk as .vibeeditor/workspace.json
 
-    User->>AgentPanel: 发送消息
-    AgentPanel->>Server: POST /api/agent/stream
-    Server-->>AgentPanel: SSE 流式 chunks
-    AgentPanel->>AgentPanel: 解析 <edit> 区块 → ParsedEdit[]
-    AgentPanel->>MainLayout: @apply-edits(edits)
+    User->>Web: 打开文件夹
+    Web->>Server: POST /api/workspace/open { rootPath }
+    Server->>WM: 创建/复用 AgentRuntime
+    WM->>Disk: 读取持久化的工作区与 Agent 会话
+    Disk-->>WM: WorkspaceData
+    WM-->>Server: workspaceId + 会话列表
+    Server-->>Web: WorkspaceData
 
-    loop 每个 edit
-        MainLayout->>MainLayout: 解析 resolvedPath
-        MainLayout->>useFileSystem: fs.client.readFile(resolvedPath)
-        useFileSystem-->>MainLayout: original content
-        MainLayout->>MainLayout: editSnapshots.set(path, original)
-        MainLayout->>useFileSystem: fs.client.writeFile(resolvedPath, edit.content)
-        useFileSystem-->>MainLayout: ok
-        MainLayout->>EditorStore: updateContent / openFile
-        MainLayout->>useFileSystem: fs.loadDirectory('.')
-    end
+    User->>Web: 与 Agent 对话
+    Web->>Server: POST /api/agent/stream { workspaceId }
+    Server-->>Web: SSE 流式事件
+    Web->>Server: POST /api/workspace/sessions { session }
+    Server->>WM: 保存会话
+    WM->>Disk: 立即写盘
 
-    User->>AgentPanel: 点击 Undo
-    AgentPanel->>MainLayout: @undo-edits()
-
-    loop lastEditedFiles
-        MainLayout->>MainLayout: editSnapshots.get(filePath)
-        MainLayout->>useFileSystem: fs.client.writeFile(filePath, original)
-        useFileSystem-->>MainLayout: ok
-        MainLayout->>EditorStore: updateContent + saveTab
-    end
+    User->>Web: 关闭工作区
+    Web->>Server: POST /api/workspace/close
+    Server->>WM: 持久化数据，释放 Runtime / MCP 连接
 ```
 
-**说明**：`handleApplyEdits` 在每次写入前先读取原文做快照；`undoLastEdits` 遍历 `lastEditedFiles` 逐一恢复。`fs` 由 `reactive(useFileSystem())` 创建，Vue 3 的 `reactive()` 自动解包嵌套 `ref`，因此访问时直接使用 `fs.client` 而非 `fs.client.value`。
+**说明**：服务端通过 `workspaceId` 复用 `AgentRuntime`（含 MCP 连接），Agent 对话历史随工作区数据持久化到工作区目录下的 `.vibeeditor/workspace.json`，关闭后重新打开即可恢复标签页与会话。
 
 ### 5. 核心类型概览
 
@@ -244,71 +279,28 @@ sequenceDiagram
 | 接口/类 | 所在包 | 说明 |
 |----------|--------|------|
 | `IAgentFileSystem` | `@vibeeditor/agent` | 最小化文件系统接口（readFile / writeFile / exists / readDir） |
-| `IFileSystem` | `@vibeeditor/core` | 完整文件系统接口（含 deleteFile / createDir / rename / stat / watch / dispose） |
-| `LocalFileSystem` | `@vibeeditor/core` | Node.js `fs/promises` 实现 |
-| `ServerFileSystem` | `@vibeeditor/core` | REST API 客户端实现 |
-| `VirtualFileSystem` | `@vibeeditor/core` | 内存 Map 实现 |
+| `IFileSystem` / `LocalFileSystem` | `@vibeeditor/server` | 服务端文件系统接口与 Node.js `fs/promises` 实现（`fs/`） |
+| `FileServiceClient` | `@vibeeditor/web` | 前端统一文件客户端接口（Electron IPC / Server REST / Browser FSA 三实现） |
 
-**Agent / AI 层：**
+**Agent / AI 层（均在 `@vibeeditor/agent`）：**
 
-| 接口/类 | 所在包 | 说明 |
-|----------|--------|------|
-| `IAgentProvider` | `@vibeeditor/agent` | 高层 Agent Provider 接口（initialize / sendMessage / streamMessage） |
-| `ILLMProvider` | `@vibeeditor/agent` | 底层 LLM 调用接口（chat / chatStream） |
-| `Agent` | `@vibeeditor/agent` | 多轮工具调用循环，自动注册 5 个默认工具 |
-| `Session` | `@vibeeditor/agent` | 主 Agent + 子 Agent 编排，`<delegate>` 路由 |
-| `ToolRegistry` | `@vibeeditor/agent` | 工具注册表，生成系统提示 |
-| `ITool` | `@vibeeditor/agent` | 工具接口（name / description / usage / inputSchema / execute） |
-| `McpManager` | `@vibeeditor/agent` | 多 MCP 服务器连接管理，工具发现与路由 |
+| 接口/类 | 说明 |
+|----------|------|
+| `AgentRuntime` | **对外统一入口**：plan/build 模式、会话管理、MCP 集成、编辑应用 |
+| `Agent` | 单 Agent 多轮工具调用循环 |
+| `Session` | 主 Agent + 子 Agent 编排，`<delegate>` 路由，流式 |
+| `ToolRegistry` / `ITool` | 工具注册表与工具接口（5 个默认工具） |
+| `McpManager` | 多 MCP 服务器连接管理，工具发现与路由 |
+| `LLMGateway` | LLM 提供商配置管理与持久化 |
 
-**编辑器状态：**
+**编辑与编辑器状态：**
 
 | 接口/类 | 所在包 | 说明 |
 |----------|--------|------|
-| `EditorTab` | `@vibeeditor/core` | 标签页（id / name / path / content / language / isDirty） |
-| `EditOperation` | `@vibeeditor/agent` | 编辑操作（oldText / newText / filePath） |
-| `AgentContext` | `@vibeeditor/agent` | Agent 上下文（openFiles / fileTree / cursorPosition / selection / conversationHistory） |
-| `EditorStore` | `@vibeeditor/web` | Pinia store —— 前端唯一状态源（tabs / fileTree / workspaceRoot） |
-
-## 快速开始
-
-```bash
-# 安装依赖
-npm install
-
-# 同时启动服务器和前端（自动构建 @vibeeditor/agent + @vibeeditor/core）
-npm run dev:all
-
-# 或分别启动（均会自动构建 @vibeeditor/agent + @vibeeditor/core）
-npm run dev:server   # 后端运行在 http://localhost:20385
-npm run dev:web      # 前端运行在 http://localhost:5173
-npm run dev:electron # Electron 桌面端（自动启动 Vite 前端 + Electron 窗口）
-
-# CLI 和 MCP 测试
-npm run cli          # 交互式 Agent CLI（支持 MCP 工具）
-npm run mcp:test     # MCP 集成测试（STDIO / HTTP / SSE）
-```
-
-## 部署模式
-
-| 模式 | 文件系统 | 启动命令 |
-|------|---------|---------|
-| **Electron** 桌面端 | 本地 FS, 通过 IPC (`Node.js fs`) | `npm run dev:electron`（自动启动 Vite + Electron，自动构建 agent、core 和 electron）<br/>两个入口：`main.ts`（标准窗口）和 `main-server.ts`（嵌入式服务器 + 原生菜单 + 无边框窗口） |
-| **Server** 部署 (远程文件) | Server FS, 通过 REST API | `npm run dev:server` + `npm run dev:web` |
-| **Browser** 本地文件 | File System Access API | `npm run dev:web` |
-
-前端会在运行时自动检测环境, 在 `packages/web/src/services/fileService.ts` 中选择合适的文件服务。
-
-## 构建
-
-```bash
-npm run build:agent     # 构建 AI Agent 框架
-npm run build:core      # 构建共享核心
-npm run build:server    # 构建 Express 后端
-npm run build:web       # 构建 Vue 前端 (输出到 packages/web/dist/)
-npm run build:electron  # 构建 Electron 主进程
-npm run build:all       # 构建所有包 (agent → core → web → server → electron)
-```
+| `AgentContext` | `@vibeeditor/agent` | Agent 上下文（openFiles / fileTree / cursorPosition 等） |
+| `ParsedEdit` / `AgentEditResult` | `@vibeeditor/agent` | 解析出的编辑块 / 待应用的编辑结果 |
+| `EditorTab` / `ViewMode` | `@vibeeditor/web` | 标签页（含 viewMode 渲染器选择，定义于 `stores/editor.ts`） |
+| `EditorStore` | `@vibeeditor/web` | Pinia store —— 前端唯一状态源（tabs / fileTree / workspace） |
 
 ## 服务端 API
 
@@ -327,10 +319,16 @@ npm run build:all       # 构建所有包 (agent → core → web → server →
 | POST | `/api/agent/chat` | 发送消息给 Agent |
 | POST | `/api/agent/stream` | 流式返回 Agent 响应 (SSE) |
 | POST | `/api/agent/apply-edits` | 应用 AI 生成的编辑操作到文件 |
-| POST | `/api/mcp/test` | 测试 MCP 服务器连接 `{ config }` |
+| GET/POST | `/api/workspace/open·info·update·close` | 工作区生命周期管理 |
+| GET/POST/DELETE | `/api/workspace/sessions` | Agent 会话持久化（增删查） |
+| GET | `/api/workspace/roots·browse` | 系统根目录列表 / 浏览文件系统 |
+| GET/POST/PUT/DELETE | `/api/llm/providers` | LLM 提供商 CRUD + 设为活跃 + 连通性测试 |
+| GET/POST/PUT/DELETE | `/api/mcp/servers` | MCP 服务器 CRUD + `/test` + `/tools` |
 | GET | `/api/config/:filename` | 读取配置文件 |
 | PUT | `/api/config/:filename` | 写入配置文件 |
 | GET | `/api/health` | 健康检查 |
+
+> 完整的请求/响应字段与示例见 [`packages/server/README.md`](packages/server/README.md)。
 
 ## MCP (Model Context Protocol) 支持
 
@@ -386,112 +384,16 @@ tools.forEach(t => agent.registerTool(t));
 
 ## 项目结构
 
-### `@vibeeditor/agent`
-- `types/agent.ts` — `AgentConfig`, `AgentContext`, `AgentDefinition`, `AgentMode`, `AgentResult`, `SessionMessage`
-- `types/edit.ts` — `EditOperation`, `EditResult`
-- `types/filesystem.ts` — `IAgentFileSystem`（最小化接口：readFile / writeFile / exists / readDir）
-- `types/message.ts` — `AgentMessage`
-- `types/provider.ts` — `IAgentProvider`（高层接口）、`ILLMProvider`（底层 LLM 调用接口）
-- `types/tool.ts` — `ITool`, `ToolInputSchema`, `ToolExecutionContext`, `ToolAnnotations`
-- `agent.ts` — `Agent` 类：多轮工具调用循环，自动注册 5 个默认工具
-- `session.ts` — `Session` 类：主 Agent + 子 Agent 编排，`<delegate>` 标签路由
-- `tool-registry.ts` — `ToolRegistry`：工具注册/查找/系统提示生成
-- `tools/read-file.ts` — `ReadFileTool`（`<read_file>`）
-- `tools/list-dir.ts` — `ListDirTool`（`<list_dir>`）
-- `tools/search-code.ts` — `SearchCodeTool`（`<search_code>`）
-- `tools/bash.ts` — `BashTool`（`<bash>`）—— 执行 shell 命令
-- `tools/delegate.ts` — `DelegateTool`（`<delegate>`）
-- `tools/index.ts` — `createDefaultTools()` 工厂函数（5 个工具）
-- `mcp/manager.ts` — `McpManager`：多服务器生命周期管理、传输工厂、工具路由
-- `mcp/client.ts` — `MCPClient`：单服务器连接（initialize / listTools / callTool）
-- `mcp/adapter.ts` — `MCPToolAdapter`：将 MCP `tools/call` 桥接为 `ITool` 接口
-- `mcp/config.ts` — `McpConfig` / `McpServerConfig` 类型定义
-- `mcp/tool-catalog.ts` — `ToolCatalog`：只读扁平工具元数据存储
-- `mcp/utils.ts` — `formatMCPResult`、`buildXMLUsage` 辅助函数
-- `mcp/__test.ts` — MCP 集成测试（STDIO / HTTP / SSE 三种传输模式）
-- `provider.ts` — `OpenAILikeProvider`（实现 `IAgentProvider`，原生 fetch，无 SDK 依赖）
-- `openai-client.ts` — `createOpenAILLMProvider()` 工厂（实现 `ILLMProvider`）、`resolveLLMConfig()`、`buildMessages()`
-- `loop.ts` — `AgentLoop`（@deprecated，请使用 `Agent` + `Session`）
-- `parser.ts` — `parseToolCalls()`：基于正则的 XML 标签提取
-- `executor.ts` — `executeEdits()` / `revertEdits()`：AI 文件编辑应用与回滚
-- `context.ts` — `buildContextPrompt()`、`createEmptyContext()`、`getConversationSummary()`
-- `cli.ts` — 交互式 CLI Agent，支持 MCP 工具
-- `index.ts` — 统一导出所有公共 API
+仓库为 npm workspace，含 **4 个包**（每个包都有自己的 README，下表仅为概览）：
 
-### `@vibeeditor/core`
-- `fs/types.ts` — `IFileSystem` 接口, `FileEntry`, `FileContent`
-- `fs/local.ts` — `LocalFileSystem` (Node.js fs)
-- `fs/server.ts` — `ServerFileSystem` (REST 客户端)
-- `fs/virtual.ts` — `VirtualFileSystem` (内存文件系统)
-- `editor/types.ts` — `EditorTab`, `EditOperation`, 语言检测
-- `editor/document.ts` — Tab/文档状态管理
+| 包 | 角色 | 关键内容 | 详细文档 |
+|----|------|----------|----------|
+| `@vibeeditor/agent` | AI Agent 框架 | `AgentRuntime`（统一入口）、`Agent`/`Session`、5 个默认工具、`McpManager`、`LLMGateway`、`executeEdits`/`parseEditsFromText`、结构化日志、CLI | [packages/agent/README.md](packages/agent/README.md) |
+| `@vibeeditor/server` | Express 后端 | `createApp`/`startServer`、`fs/`（`LocalFileSystem`）、`routes/`（files·agent·workspace·llm·mcp·config）、`WorkspaceManager`、请求日志中间件 | [packages/server/README.md](packages/server/README.md) |
+| `@vibeeditor/web` | Vue 3 前端 | `MonacoEditor` + 多格式查看器、`AgentPanel`、文件树、MCP/设置面板、`composables/`、`services/`（`fileService` 等）、`stores/`（editor/sessions/settings）、i18n | [packages/web/README.md](packages/web/README.md) |
+| `vibeeditor-desktop` | Electron 桌面壳 | `main.ts`/`main-server.ts` 双入口、`preload.ts`（`window.electronAPI`）、`ipc/file-handler.ts`、原生菜单、`vibe://` 协议 | [packages/electron/README.md](packages/electron/README.md) |
 
-### `@vibeeditor/web`
-- `components/editor/MonacoEditor.vue` — Monaco 编辑器封装（主题感知）
-- `components/editor/ImageViewer.vue` — PNG / JPG / GIF / SVG / WebP 图片查看
-- `components/editor/PdfViewer.vue` — PDF 渲染
-- `components/editor/DocxViewer.vue` — Word 文档查看
-- `components/editor/ExcelViewer.vue` — Excel 表格查看
-- `components/editor/PptxViewer.vue` — PowerPoint 幻灯片查看
-- `components/editor/MarkdownViewer.vue` — Markdown 渲染（含 KaTeX 数学公式）
-- `components/editor/HtmlViewer.vue` — HTML 实时预览
-- `components/agent/AgentPanel.vue` — AI 对话面板（消息、流式输出、工具状态）
-- `components/agent/ModeSelector.vue` — build / plan 模式切换
-- `components/agent/ProviderSelect.vue` — LLM Provider 选择下拉框
-- `components/agent/SettingsDialog.vue` — Provider 配置（API URL、密钥、模型）
-- `components/file-tree/FileTree.vue` — 目录树组件
-- `components/file-tree/TreeNode.vue` — 递归树节点
-- `components/file-tree/contextMenu.ts` — 右键菜单构建（打开/重命名/删除/新建/剪切/复制/粘贴/复制路径）
-- `components/layout/MainLayout.vue` — 可拖拽分隔布局
-- `components/layout/ActivityBar.vue` — 左侧图标栏
-- `components/layout/SideBar.vue` — 侧边面板容器
-- `components/layout/RightToolbar.vue` — 右侧工具栏（Agent / MCP 切换）
-- `components/layout/AboutDialog.vue` — 关于对话框
-- `components/mcp/McpSettingsPanel.vue` — MCP 服务器列表管理
-- `components/mcp/McpServerItem.vue` — MCP 服务器行（名称、类型、开关、操作）
-- `components/mcp/McpEditDialog.vue` — 添加/编辑 MCP 服务器对话框
-- `components/mcp/McpToolList.vue` — 工具列表展示
-- `components/settings/SettingDropdown.vue` — 主题/语言切换弹出框
-- `components/toolbar/Toolbar.vue` — 顶部工具栏
-- `components/SearchPanel.vue` — 搜索面板（i18n 支持，结果按文件分组）
-- `components/SaveDialog.vue` — 保存确认对话框
-- `components/StatusBar.vue` — 底部状态栏（语言、行列位置、工作区模式）
-- `composables/useAgent.ts` — Agent 状态管理、流式输出、上下文组装
-- `composables/useFileSystem.ts` — 文件操作 + 键盘快捷键
-- `composables/useEditor.ts` — Monaco 实例管理、文件打开
-- `composables/useProviderSettings.ts` — LLM Provider 配置持久化
-- `composables/useMcpSettings.ts` — MCP 服务器列表持久化
-- `composables/useFileClipboard.ts` — 文件剪切/复制/粘贴操作
-- `composables/useFileTreeContextMenu.ts` — 右键上下文菜单集成
-- `composables/useWindowResize.ts` — 无边框窗口拖拽调整
-- `services/agentService.ts` — Agent REST / SSE 客户端
-- `services/fileService.ts` — 运行时检测 + 三模式文件操作
-- `services/configService.ts` — 配置 CRUD（Electron IPC / REST / localStorage）
-- `services/mcpService.ts` — MCP 服务器连接测试
-- `services/editParser.ts` — 重新导出 `parseEditsFromText`
-- `services/editorInstance.ts` — Monaco 编辑器单例持有
-- `services/markdown.ts` — Markdown 渲染（含 KaTeX）
-- `stores/editor.ts` — Pinia：标签页、文件树、工作区
-- `stores/settings.ts` — Pinia：语言 + 主题（dark / light / blue）
-- `stores/sessions.ts` — Pinia：多会话 Agent 聊天管理
-- `locales/en.ts` — 英文翻译
-- `locales/zh.ts` — 中文翻译
-- `locales/index.ts` — vue-i18n 初始化
-
-### `@vibeeditor/server`
-- `routes/files.ts` — 文件 CRUD API（list / read / read-buffer / write / delete / mkdir / rmdir / exists / stat / rename），含路径遍历防护
-- `routes/agent.ts` — Agent 对话 + SSE 流式端点（build 模式下集成 MCP）
-- `routes/mcp.ts` — `POST /test` MCP 服务器连接测试
-- `routes/config.ts` — `GET/PUT /:filename` 配置文件管理
-- `middleware/auth.ts` — Bearer Token 认证中间件（默认未挂载）
-- `index.ts` — Express 应用工厂 + `startServer()`
-- `run.ts` — CLI 入口（读取 app-config.json，启动服务器）
-
-### `@vibeeditor/electron`
-- `main.ts` — 标准 Electron 入口：创建 `BrowserWindow`，加载 Vite dev URL 或 `web/dist/index.html`，原生菜单栏
-- `main-server.ts` — 嵌入式 Express 服务器入口：原生菜单栏、无边框窗口、`vibe://` 协议、单实例锁
-- `preload.ts` — Context Bridge 暴露 `window.electronAPI`（23 个 IPC 通道）
-- `ipc/file-handler.ts` — 原生文件对话框和文件系统操作
+> 说明：早期文档中的 `@vibeeditor/core` 已不存在 —— 文件系统实现（`LocalFileSystem`/`FileEntry`）已并入 `@vibeeditor/server` 的 `fs/`，编辑器标签类型已并入 `@vibeeditor/web` 的 Pinia store。
 
 ---
 

@@ -39,7 +39,7 @@ npm run dev -w packages/server
 npm run build -w packages/server
 node packages/server/dist/run.js
 
-# Via root scripts (builds agent + core first)
+# Via root scripts (builds agent first)
 npm run dev:server
 npm run dev:all      # server + web concurrently
 ```
@@ -1422,8 +1422,7 @@ while (true) {
 
 | Package | Purpose |
 |---------|---------|
-| `@vibeeditor/agent` | Agent Provider, Session, MCP Manager, LLM Gateway |
-| `@vibeeditor/core` | `LocalFileSystem`, `FileEntry` types |
+| `@vibeeditor/agent` | AgentRuntime, MCP Manager, LLM Gateway, structured logging |
 | `express` | HTTP framework |
 | `cors` | Cross-origin support |
 

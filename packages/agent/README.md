@@ -1,134 +1,162 @@
 # @vibeeditor/agent
 
-VibeEditor 独立 AI Agent 框架 —— 提供 LLM Provider、Agent 循环、工具执行等核心智能体功能。
+> [English](README_EN.md)
+
+VibeEditor 独立 AI Agent 框架 —— 提供统一的 Agent 运行时、LLM 提供商管理、多轮工具调用循环、MCP 客户端与编辑执行能力。
 
 ## 设计原则
 
-- **零依赖**：不依赖 `@vibeeditor/core` 或其他工作区包，仅需 TypeScript 编译器
-- **平台无关**：通过 `IAgentFileSystem` 接口解耦文件系统，可在 Node.js 和浏览器中运行
-- **接口驱动**：所有核心功能通过接口暴露，便于扩展和替换
+- **平台无关**：通过 `IAgentFileSystem` 接口（`readFile` / `writeFile` / `exists` / `readDir`）解耦文件系统，可在 Node.js 服务端或 Electron 主进程中运行
+- **零工作区依赖**：不依赖任何其它 `@vibeeditor/*` 包，仅依赖 `openai` SDK 与 MCP SDK
+- **统一入口**：对外只暴露 `AgentRuntime` 等少量公共 API，内部实现（`Agent` / `Session` / 工具等）不直接暴露
+
+## 依赖
+
+| 包 | 用途 |
+|----|------|
+| `openai` (v6) | OpenAI 兼容 Chat Completions 调用 |
+| `@modelcontextprotocol/sdk` | MCP 客户端（STDIO / SSE / HTTP 传输） |
 
 ## 目录结构
 
 ```
 src/
-├── index.ts       # 统一导出入口
-├── types/
-│   ├── edit.ts        # TextSelection、EditOperation
-│   ├── message.ts     # AgentEditResult、AgentMessage
-│   ├── agent.ts       # AgentMode、AgentConfig、AgentContext
-│   ├── provider.ts    # IAgentProvider
-│   └── filesystem.ts  # FileEntry、IAgentFileSystem
-├── context.ts     # 上下文构建工具
-├── executor.ts    # 编辑执行引擎
-├── parser.ts      # LLM 回复解析器
-├── provider.ts    # OpenAI 兼容 LLM Provider
-└── loop.ts        # 多轮自主编码 Agent 循环
+├── index.ts            # 公共 API 统一导出入口
+├── runtime.ts          # AgentRuntime —— 对外统一入口（plan/build、会话管理、MCP）
+├── agent.ts            # Agent —— 单 Agent 多轮工具调用循环
+├── session.ts          # Session —— 主/子 Agent 编排、<delegate> 委派、流式
+├── tool-registry.ts    # ToolRegistry —— 工具注册、查找、系统提示生成
+├── tools/
+│   ├── index.ts        # createDefaultTools() —— 5 个默认工具
+│   ├── read-file.ts    # <read_file>   读取文件
+│   ├── list-dir.ts     # <list_dir>    列目录
+│   ├── search-code.ts  # <search_code> 搜索代码
+│   ├── bash.ts         # <bash>        执行 shell 命令
+│   └── delegate.ts     # <delegate>    委派子 Agent
+├── mcp/
+│   ├── manager.ts      # McpManager —— 多服务器生命周期、工具发现与路由
+│   ├── client.ts       # MCPClient  —— 单服务器连接（initialize/list/call）
+│   ├── adapter.ts      # MCPToolAdapter —— 将 MCP 工具桥接为 ITool
+│   ├── config.ts       # McpConfig / McpServerConfig / McpServerEntry 类型
+│   ├── tool-catalog.ts # ToolCatalog —— 只读工具元数据存储
+│   ├── utils.ts        # MCP 结果格式化、XML usage 构建
+│   └── __test.ts       # MCP 集成测试（STDIO / SSE / HTTP）
+├── llm/
+│   ├── index.ts        # 重导出 LLMGateway 等
+│   └── gateway.ts      # LLMGateway —— LLM 提供商 CRUD + 持久化（llm-settings.json）
+├── openai-client.ts    # createOpenAILLMProvider() / buildMessages() / resolveLLMConfig()
+├── provider.ts         # OpenAILikeProvider（IAgentProvider 实现）
+├── executor.ts         # executeEdits() / revertEdits() —— 编辑应用与回滚
+├── parser.ts           # parseEditsFromText() —— 解析 <edit path="...">…</edit>
+├── context.ts          # buildContextPrompt() —— 上下文组装
+├── logger.ts           # createLogger() / runWithContext() —— 结构化日志
+├── log-categories.ts   # LOG_CATEGORY 日志分类常量
+├── loop.ts             # AgentLoop（@deprecated，请使用 AgentRuntime）
+├── cli.ts              # 交互式 CLI Agent（支持 MCP 工具）
+└── types/              # 类型定义（agent / message / filesystem / tool / provider / edit）
 ```
 
-## 模块详解
+## 公共 API（`index.ts`）
 
-### 1. 类型系统（`types/`）
-
-所有 Agent 相关类型按职责拆分至独立文件，与外界无依赖：
-
-| 文件 | 类型 | 说明 |
+| 导出 | 来源 | 说明 |
 |------|------|------|
-| `types/edit.ts` | `TextSelection`、`EditOperation` | 文本选区范围、编辑操作（insert / delete / replace） |
-| `types/message.ts` | `AgentEditResult`、`AgentMessage` | 编辑结果、对话消息 |
-| `types/agent.ts` | `AgentMode`、`AgentConfig`、`AgentContext` | 工作模式、运行配置、上下文快照 |
-| `types/provider.ts` | `IAgentProvider` | AI 后端插件契约（initialize、sendMessage、streamMessage、dispose） |
-| `types/filesystem.ts` | `FileEntry`、`IAgentFileSystem` | 文件条目、Agent 所需文件系统最小接口 |
+| `AgentRuntime` | `runtime.ts` | **统一入口**：封装 plan/build 模式、会话管理与 MCP |
+| `AgentRuntimeConfig` / `AgentRuntimeEvent` / `ChatResult` | `runtime.ts` | Runtime 配置与流式事件类型 |
+| `executeEdits` / `revertEdits` / `ExecutionResult` | `executor.ts` | 批量应用 / 回滚 AI 生成的文件编辑 |
+| `parseEditsFromText` / `ParsedEdit` | `parser.ts` | 从 LLM 回复中解析 `<edit>` 块 |
+| `LLMGateway` / `maskApiKey` / `LLMProvider` / `LLMSettings` | `llm/gateway.ts` | LLM 提供商配置管理（持久化） |
+| `McpManager` / `McpToolInfo` | `mcp/manager.ts` | MCP 多服务器连接管理 |
+| MCP 配置类型 | `mcp/config.ts` | `McpServerConfig` / `McpConfig` / `McpServerEntry` 等 |
+| `createLogger` / `runWithContext` / `Logger` | `logger.ts` | 结构化日志 |
+| `LOG_CATEGORY` / `LogCategory` | `log-categories.ts` | 日志分类 |
+| 核心类型 | `types/*` | `AgentContext` / `SessionMessage` / `AgentEditResult` / `IAgentFileSystem` / `ITool` 等 |
 
-### 2. 上下文构建（`context.ts`）
+> 未列在 `index.ts` 中的导出（`Agent`、`Session`、`ToolRegistry`、各 `Tool`、`OpenAILikeProvider` 等）属于内部实现，不应被外部直接引用。
 
-| 函数 | 说明 |
+## 核心模块
+
+### AgentRuntime（`runtime.ts`）
+
+对外的唯一推荐入口。一个 `AgentRuntime` 实例绑定一个工作区根目录，内部按 `sessionId` 缓存多个 `Session`。
+
+| 能力 | 说明 |
 |------|------|
-| `createEmptyContext()` | 创建空的 Agent 上下文 |
-| `buildContextPrompt(context)` | 将上下文组装为结构化 Markdown 提示词 |
-| `getConversationSummary(messages, maxMessages?)` | 对话历史摘要 |
+| `chat()` / `chatStream()` | 一次性 / SSE 流式对话 |
+| **plan 模式** | 直接调用 LLM（`createOpenAILLMProvider` + `buildMessages`），不调用工具，默认 `maxTurns=10` |
+| **build 模式** | 创建 `Agent` + `Session`，多轮自主工具调用循环，默认 `maxTurns=20` |
+| MCP | `build` 模式下按 `mcpServers` 连接 MCP 服务器并把工具注入 Agent；支持 `reinitialize()` 热更新 |
+| 会话管理 | `getSessionMessages` / `restoreSession` / `getSessionIds` / `deleteSession` |
+| 文件系统 | 未显式传入 `fileSystem` 时，按 `workspaceRoot` 创建带路径穿越防护的默认实现 |
+| `applyEdits()` | 通过 `executeEdits` 将编辑写入文件系统 |
+| 默认文件系统 | 内置 `IAgentFileSystem`，对路径做 `resolve → startsWith` 越权校验 |
 
-### 3. 编辑执行引擎（`executor.ts`）
+**流式事件**（`AgentRuntimeEvent.type`）：`chunk` / `thinking` / `tool_start` / `tool_end` / `tool_result` / `done` / `error`。
 
-| 函数 | 说明 |
-|------|------|
-| `executeEdits(fs, edits)` | 批量执行编辑操作，返回 `ExecutionResult` |
-| `revertEdits(content, operations)` | 回滚编辑操作（反转 insert ↔ delete） |
+### Agent + Session（`agent.ts` / `session.ts`）
 
-### 4. 解析器（`parser.ts`）
+- `Agent`：单个智能体的多轮循环 —— 构建系统提示词 → 调用 LLM → 解析工具调用 → 执行工具 → 反馈结果 → 下一轮，直至无工具调用或达到 `maxTurns`。
+- `Session`：编排主 Agent，并通过 `<delegate>` 标签把子任务委派给子 Agent；提供 `start()` / `startStream()`。
 
-| 函数 | 说明 |
-|------|------|
-| `parseToolCalls(text)` | 从 LLM 回复中解析 `<read_file>`、`<list_dir>`、`<search_code>` 工具调用标签 |
-| `parseEditsFromText(text)` | 从 LLM 回复中解析 `<edit path="...">...</edit>` 编辑块 |
+### 默认工具（`tools/`）
 
-### 5. LLM Provider（`provider.ts`）
+`createDefaultTools()` 返回 5 个工具：
 
-`OpenAILikeProvider` 实现 `IAgentProvider`：
+| 工具 | 标签 | 说明 |
+|------|------|------|
+| `ReadFileTool` | `<read_file path="..."/>` | 读取文件 |
+| `ListDirTool` | `<list_dir path="..."/>` | 列出目录内容 |
+| `SearchCodeTool` | `<search_code pattern="..."/>` | 搜索代码 |
+| `BashTool` | `<bash>...</bash>` | 执行 shell 命令 |
+| `DelegateTool` | `<delegate>...</delegate>` | 委派子 Agent |
 
-- 使用原生 `fetch`，无第三方 SDK 依赖
-- 支持 OpenAI、Ollama、vLLM 等任意 OpenAI 兼容 API
-- 非流式 `chat()` 和流式 `chatStream()`（SSE 解析）
-- 配置优先级：显式传入 > `LLM_API_URL` / `LLM_API_KEY` / `LLM_MODEL` 环境变量 > 默认值
-- 同时支持 `sendMessage()` 和 `streamMessage()` 接口
+### LLM Gateway（`llm/gateway.ts`）
 
-### 6. Agent 循环（`loop.ts`）
+`LLMGateway` 管理 LLM 提供商配置（`LLMProvider`），支持增删改查、设置活跃提供商、连通性/模型列表测试，并持久化到 `configDir/llm-settings.json`。`maskApiKey()` 用于在返回时脱敏 API Key。
 
-`AgentLoop` 实现多轮自主编码循环：
+### MCP 客户端（`mcp/`）
 
-1. 构建系统提示词（角色、工具说明、编辑指令、行为规则）
-2. 注入上下文（打开文件、文件树、光标、选区、对话历史）
-3. 每轮：调用 LLM → 解析工具调用 → 执行工具 → 结果反馈 → 下一轮
-4. 最多 15 轮，LLM 无工具调用时结束循环
+| 类 | 说明 |
+|----|------|
+| `McpManager` | 多服务器生命周期管理：`connectAll` → `discoverAndCreateAdapters` → 路由调用 → `disconnectAll` |
+| `MCPClient` | 单服务器连接（initialize / `tools/list` / `tools/call`） |
+| `MCPToolAdapter` | 将 MCP `tools/call` 桥接为 `ITool`，含参数类型自动转换 |
+| `ToolCatalog` | 只读扁平工具元数据存储，用于展示 / CLI 输出 |
 
-支持的工具有：
-- `<read_file path="..."/>` — 读取文件
-- `<list_dir path="..."/>` — 列目录内容
-- `<search_code pattern="..." [path="..." maxResults="20"]/>` — 搜索代码
-
-通过 `IAgentFileSystem` 接口操作文件系统，与平台解耦。
+传输模式：**STDIO**（本地子进程）/ **HTTP**（无状态 POST）/ **SSE**（自动提取 `Mcp-Session-Id`）。
 
 ## 使用示例
 
 ```typescript
-import {
-  OpenAILikeProvider,
-  AgentLoop,
-  createEmptyContext,
-  executeEdits,
-  parseEditsFromText,
-  parseToolCalls
-} from '@vibeeditor/agent';
+import { AgentRuntime, executeEdits } from '@vibeeditor/agent';
 
-// 1. 创建 LLM Provider
-const provider = new OpenAILikeProvider();
-await provider.initialize({
+// 1. 创建 Runtime（build 模式：多轮工具循环）
+const runtime = new AgentRuntime({
   mode: 'build',
-  apiUrl: 'https://api.openai.com/v1',
-  apiKey: 'sk-...',
-  model: 'gpt-4o'
+  provider: { apiUrl: 'https://api.openai.com/v1', apiKey: 'sk-...', model: 'gpt-4o' },
+  workspaceRoot: '/path/to/project',
+  // mcpServers: [...]  // 可选，build 模式下连接 MCP
 });
 
-// 2. 构建上下文
-const context = createEmptyContext();
-context.openFiles = [{ path: 'src/app.ts', content: '...' }];
-context.fileTree = ['src/app.ts', 'src/utils.ts'];
+// 2. 流式对话
+const result = await runtime.chatStream(
+  '帮我实现登录功能',
+  { openFiles: [{ path: 'src/app.ts', content: '...' }], fileTree: '...' },
+  (event) => {
+    if (event.type === 'chunk') process.stdout.write(event.text ?? '');
+  }
+);
 
-// 3. 运行 Agent 循环（需提供 IAgentFileSystem 实现）
-const fs = new MyFileSystem();
-const loop = new AgentLoop(fs);
-await loop.run(provider, { mode: 'build' }, '帮我实现登录功能', context, (data) => {
-  console.log('SSE event:', data);
-});
-
-// 4. 或直接使用低层 API
-const reply = await provider.sendMessage('分析这段代码', context);
-const edits = parseEditsFromText(reply.content);
-await executeEdits(fs, edits);
+// 3. 应用解析出的编辑
+if (result.edits.length > 0) {
+  await runtime.applyEdits(
+    result.edits.map(e => ({ path: e.path, operation: 'modify', content: e.content }))
+  );
+}
 ```
 
 ## 技术细节
 
-- **零运行时依赖** — 仅 `typescript` 作为开发依赖
-- **TypeScript 严格模式** — 编译目标 ES2022，生成声明文件和 Source Map
-- **双模块格式** — 通过 `package.json` 的 `exports` 字段同时支持 ESM 和 CJS
+- **TypeScript 严格模式**，编译目标 ES2022，生成声明文件与 Source Map
+- 通过 `package.json` 的 `exports` 字段同时支持 ESM 与 CJS 引用
+- 构建：`npm run build -w packages/agent`（`tsc`）；监听：`npm run dev -w packages/agent`
+- CLI：根目录 `npm run cli`；MCP 集成测试：`npm run mcp:test`

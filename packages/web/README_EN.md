@@ -1,210 +1,129 @@
 # @vibeeditor/web
 
-VibeEditor frontend — AI-assisted code editor built with Vue 3 + Monaco Editor + Pinia.
+> [中文](README.md)
 
-## Directory Structure
+VibeEditor frontend — an AI-assisted code editor built on Vue 3 + Vite + Monaco Editor + Pinia, using the naive-ui component library and vue-i18n for internationalization.
+
+## Tech stack
+
+| Tech | Purpose |
+|------|---------|
+| Vue 3 (Composition API) | UI framework |
+| Vite | Build / dev server (port 5173, proxies `/api` to `:20385`) |
+| Monaco Editor | Code editor |
+| Pinia | State management |
+| naive-ui | UI component library |
+| vue-i18n | Chinese / English i18n |
+| markdown-it + KaTeX | Agent message Markdown / math rendering |
+| `@vue-office/*` / docx-preview | Excel / PPTX / Word document preview |
+| `@imengyu/vue3-context-menu` | File-tree context menu |
+
+> The only workspace dependency is **`@vibeeditor/agent`** (for types and helpers like `parseEditsFromText`). The frontend does not run the agent loop itself — it calls the server over SSE.
+
+## Directory layout
 
 ```
 src/
-├── main.ts                  # App entry point, mounts Vue + Pinia
-├── App.vue                  # Root component, global CSS variables
-├── env.d.ts                 # Type declarations (Electron API, File System Access API)
+├── main.ts                       # App entry (createApp + Pinia + i18n + naive-ui)
+├── App.vue                       # Root component
+├── env.d.ts                      # Type decls (.vue modules, window.electronAPI, FSA API)
 ├── components/
-│   ├── layout/
-│   │   ├── MainLayout.vue   # Core orchestrator — layout, tabs, drag resize, keybindings
-│   │   ├── ActivityBar.vue  # Left activity bar (VS Code-style icon navigation)
-│   │   └── SideBar.vue      # Sidebar container (collapsible panels)
-│   ├── toolbar/
-│   │   └── Toolbar.vue      # Top toolbar (dropdown menus + Agent toggle)
-│   ├── editor/
-│   │   └── MonacoEditor.vue # Monaco editor wrapper component
-│   ├── file-tree/
-│   │   ├── FileTree.vue     # File tree view (expand/collapse, delete)
-│   │   └── TreeNode.vue     # Recursive tree node component
-│   ├── agent/
-│   │   ├── AgentPanel.vue   # Agent chat panel (message list + input + mode toggle)
-│   │   └── SettingsDialog.vue # LLM provider configuration dialog
-│   ├── StatusBar.vue        # Bottom status bar (language, line/col, workspace mode)
-│   └── SaveDialog.vue       # "Save As" file browser dialog
+│   ├── layout/                    # MainLayout (orchestrator), SideBar, RightToolbar, AboutDialog
+│   ├── toolbar/Toolbar.vue        # Top toolbar (File menu, window controls)
+│   ├── editor/                    # MonacoEditor + viewers: Image/Pdf/Docx/Excel/Pptx/Markdown/Html
+│   ├── file-tree/                 # FileTree, TreeNode, contextMenu.ts
+│   ├── new-file-tree/             # Newer file tree (NewFileTree / NewFileTreeMenu / types)
+│   ├── agent/                     # AgentPanel, ModeSelector, ProviderSelect, SettingsDialog
+│   ├── mcp/                       # McpSettingsPanel, McpServerItem, McpEditDialog, McpToolList
+│   ├── settings/                  # SettingsModal, GeneralSettings, ProviderSettingsSection, McpSettingsContent
+│   ├── dialogs/                   # OpenFileDialog, OpenFolderDialog
+│   ├── SearchPanel.vue / SearchPopup.vue   # Search (results grouped by file)
+│   ├── StatusBar.vue              # Status bar (language, cursor, workspace mode)
+│   ├── SaveDialog.vue             # Save / Save-As dialog
+│   └── NewItemDialog.vue          # New file / folder dialog
 ├── composables/
-│   ├── useFileSystem.ts     # File system interactions + global keyboard shortcuts
-│   ├── useAgent.ts          # Agent chat state management
-│   ├── useEditor.ts         # Monaco editor helper functions
-│   └── useProviderSettings.ts # LLM provider config (localStorage persistence)
+│   ├── useFileSystem.ts           # File operations + global keyboard shortcuts
+│   ├── useFileClipboard.ts        # File cut / copy / paste
+│   ├── useFileTreeContextMenu.ts  # File-tree context-menu integration
+│   ├── useEditor.ts               # Monaco instance management, file opening
+│   ├── useAgent.ts                # Agent state, streaming, context assembly
+│   ├── useProviderSettings.ts     # LLM provider config (persisted)
+│   ├── useLLMSettings.ts          # Server-side LLM settings
+│   ├── useMcpSettings.ts          # MCP server list
+│   ├── useNaiveTheme.ts           # naive-ui theme (dark/light/blue) mapping
+│   └── useWindowResize.ts         # Frameless window drag-resize
 ├── services/
-│   ├── fileService.ts       # File service — runtime detection + three client implementations
-│   ├── agentService.ts      # Agent API communication (REST + SSE streaming)
-│   ├── localAgentLoop.ts    # Local agent execution engine (bypasses server, calls LLM directly)
-│   ├── editParser.ts        # Parse <edit path="..."> blocks from LLM responses
-│   ├── editorInstance.ts    # Module-level singleton for Monaco editor instance
-│   └── markdown.ts          # Markdown rendering (markdown-it + Katex)
+│   ├── fileService.ts             # Runtime detection + 3 file clients + workspace API
+│   ├── agentService.ts            # Agent REST / SSE client
+│   ├── configService.ts           # Config CRUD (Electron IPC / REST / localStorage)
+│   ├── llmService.ts              # LLM provider REST client (/api/llm/*)
+│   ├── mcpService.ts              # MCP server REST client (/api/mcp/*)
+│   ├── editParser.ts              # Re-exports parseEditsFromText from @vibeeditor/agent
+│   ├── editorInstance.ts          # Monaco editor singleton holder
+│   ├── markdown.ts                # Markdown rendering (markdown-it + KaTeX)
+│   └── logger.ts                  # Frontend structured logging
 ├── stores/
-│   └── editor.ts            # Pinia editor state store (tabs, file tree, workspace)
-└── types/
-    └── markdown-it-texmath.d.ts  # Type augmentation for markdown-it-texmath
+│   ├── editor.ts                  # Pinia: tabs, file tree, workspace, ViewMode
+│   ├── sessions.ts                # Pinia: multi-session agent chat
+│   └── settings.ts                # Pinia: language + theme
+├── locales/                       # vue-i18n (en / zh / index)
+└── types/mcp-ui.ts               # MCP UI types
 ```
 
-## Architecture Overview
+## Architecture & data flow
 
 ```
-index.html
-  └─ main.ts (createApp + createPinia)
-       └─ App.vue
-            └─ MainLayout.vue (core orchestrator)
-                 ├─ Toolbar.vue           events → open/save/new/Agent toggle
-                 ├─ ActivityBar.vue       icon navigation
-                 ├─ SideBar.vue
-                 │    └─ FileTree.vue      file browsing + open/delete
-                 ├─ MonacoEditor.vue      Monaco editor
-                 ├─ AgentPanel.vue        AI chat panel
-                 │    └─ SettingsDialog.vue LLM provider config
-                 ├─ StatusBar.vue          cursor position, language, mode
-                 └─ SaveDialog.vue         save-as dialog
+User interaction → Vue components (presentation)
+                     │ emit / call methods
+                     ▼
+                 MainLayout.vue (orchestration)
+                     │ call composables / store
+                     ▼
+            Composables + Pinia Store (logic + reactive state)
+                     │ call services
+                     ▼
+                 Services (I/O + API)
+                     │
+                     ▼
+        Outside world (Electron IPC / server REST·SSE / browser FSA)
 ```
 
-## Data Flow
+- **Single source of truth**: Pinia `useEditorStore` (tabs, file tree, workspace), `useSessionsStore` (agent sessions), `useSettingsStore` (language / theme)
+- **Editor singleton**: `editorInstance.ts` shares the Monaco instance across components
+- **Agent**: all calls go through `agentService` to the server's `/api/agent/stream` (SSE); there is no built-in local agent loop anymore
 
-```
-User Interaction
-    │
-    ▼
-Vue Components (View/Presentation)
-    │  emit events / call methods
-    ▼
-MainLayout.vue (Orchestrator)
-    │  calls composable methods / store actions
-    ▼
-Composables / Store (Logic + Reactive State)
-    │  calls service layer
-    ▼
-Services (I/O + API + External Communication)
-    │
-    ▼
-External World (File System, LLM API, Electron IPC, Browser FSA API)
-```
+## Store layer — `stores/editor.ts`
 
-- **State**: Pinia `useEditorStore` is the single source of truth for editor state (tabs, file tree, workspace)
-- **Editor Reference**: `editorInstance.ts` module singleton shares the Monaco instance across components
-- **File System**: `fileService.ts` provides three runtime implementations, instantiated by `useFileSystem`
-- **Agent**: server mode uses HTTP SSE streaming; local mode uses `localAgentLoop.ts` to call LLM APIs directly
-
-## Layer Details
-
-### 1. Store Layer — `stores/editor.ts`
-
-Pinia Composition API store managing:
-
-| State | Description |
-|-------|-------------|
-| `tabs` | Open file tab list |
-| `activeTabId` / `activeTab` | Currently active tab |
-| `fileTreeNodes` | File tree node list |
-| `workspaceRoot` | Workspace root path |
+| State | Purpose |
+|-------|---------|
+| `tabs` / `activeTabId` / `activeTab` | Open tabs and the active one |
+| `fileTreeNodes` | File-tree nodes |
+| `workspaceRoots` / `workspaceRoot` | Workspace roots (multi-root; `workspaceRoot` is the first) |
 | `workspaceMode` | Workspace mode (`'local'` / `'server'`) |
+| `activeWorkspaceId` | Current server workspace ID |
+| `isSingleFile` | Single-file mode flag |
 
-Actions: `openFile`, `newUntitled`, `closeTab`, `updateContent`, `saveTab`, `setActiveTab`, `setTabPath`
+Each `EditorTab` carries a `viewMode` (`code` / `image` / `docx` / `excel` / `pptx` / `pdf` / `html` / `markdown`), chosen by file extension to pick the renderer.
+Actions: `openFile`, `newUntitled`, `closeTab`, `updateContent`, `saveTab`, `setActiveTab`, `setTabPath`, `addWorkspaceRoot`, `enterSingleFileMode` / `exitSingleFileMode`.
 
-### 2. Service Layer — `services/`
+## Runtime environment adaptation — `services/fileService.ts`
 
-#### `fileService.ts` — File System Abstraction
+`detectEnvironment()` detects and caches the runtime once, in the order **electron → browser → server**. All file operations go through the uniform `FileServiceClient` interface, so upper components never branch on the environment.
 
-- Defines `FileServiceClient` interface (aligned with `@vibeeditor/core`'s `IFileSystem`, adding `openFolder` / `openFile` / `saveFileAs`)
-- `detectEnvironment()` runtime detection: `electron` → `browser` → `server`
-- Three client implementations:
-  - `createElectronClient()` — via `window.electronAPI` IPC bridge
-  - `createServerClient()` — HTTP fetch `/api/files/*`
-  - `createBrowserLocalClient()` — Browser File System Access API
-- Directory caching (2s TTL in browser mode)
-- Path resolution helpers: `resolvePathFromHandle` / `resolveParentHandle`
+| Environment | Detection | File-system implementation |
+|-------------|-----------|----------------------------|
+| Electron | `window.electronAPI` present | `createElectronClient()` — IPC bridge to main process |
+| Browser | `window.showDirectoryPicker` present | `createBrowserLocalClient()` — File System Access API (2s dir cache) |
+| Server | none of the above | `createServerClient()` — HTTP `/api/files/*` |
 
-#### `agentService.ts` — Agent API Communication
+`FileServiceClient` also defines workspace methods (`openWorkspace` / `updateWorkspace` / `getWorkspaceSessions`, …) used for workspace and agent-session persistence in server mode.
 
-- `createAgentService()` provides `sendMessage()` (POST `/api/agent/chat`) and `streamMessage()` (POST `/api/agent/stream`, SSE parsing)
-- Supports `tool_start` / `tool_end` / `tool_result` stream events
-- Types imported from `@vibeeditor/agent`
+## Develop & build
 
-#### `localAgentLoop.ts` — Local Agent Loop
+```bash
+npm run dev -w packages/web        # Vite dev server (http://localhost:5173)
+npm run build -w packages/web      # Build to packages/web/dist/
+npm run typecheck -w packages/web  # vue-tsc -b type check
+```
 
-- Server-independent autonomous agent execution engine
-- Directly calls OpenAI-compatible chat completions API
-- Tool call parsing delegated to `@vibeeditor/agent`'s `parseToolCalls`
-- Three tools: `<read_file>`, `<list_dir>`, `<search_code>`
-- Uses `FileServiceClient` to execute tool operations locally
-
-#### `editParser.ts` — Edit Parsing
-
-- Thin wrapper, re-exports `parseEditsFromText` from `@vibeeditor/agent`
-
-#### `editorInstance.ts` — Editor Singleton
-
-- Module-level `getInstance` / `setInstance` / `clearInstance` for sharing Monaco reference across components
-
-#### `markdown.ts` — Markdown Rendering
-
-- `renderMarkdown()`: math pre-processing → markdown-it rendering → Katex replacement
-- Supports `$$...$$` (block) and `$...$` (inline), auto-filters currency amounts
-
-### 3. Composable Layer — `composables/`
-
-#### `useFileSystem.ts` — File System Interactions
-
-- Creates the appropriate `FileServiceClient` based on environment
-- Maintains three client refs: `activeClient`, `serverClient`, `localClient`
-- File ops: `loadDirectory`, `openAndReadFile`, `saveCurrentFile`, `deleteFile`, `undoDelete`, `createFolder`
-- Workspace switching: `openLocalFolder`, `connectToServer`, `openFolderDialog`
-- Global keyboard shortcuts (Ctrl+S/N/W/Z/Y/F/H/X/C/V), with `isInputFocused()` guard
-- 10-second undo window after file deletion
-
-#### `useAgent.ts` — Agent Chat State
-
-- Message list management (`ChatMessage[]`)
-- `sendMessage()` non-streaming / `streamMessage()` streaming
-- `buildAgentContext()` collects context from editor store and Monaco instance
-- Streaming: local env → `runLocalAgentLoop`, server env → `agentService.streamMessage`
-
-#### `useProviderSettings.ts` — LLM Provider Config
-
-- Module-level singleton (ensures AgentPanel and SettingsDialog share the same state)
-- localStorage persistence (`vibeeditor-providers` / `vibeeditor-active-provider`)
-- CRUD: `addProvider`, `updateProvider`, `removeProvider`, `setActive`
-- `fetchAvailableModels()` compatible with OpenAI and Ollama formats
-
-### 4. Component Layer — `components/`
-
-Components follow **container/presentation separation**, receiving data via props and communicating upward via events.
-
-| Component | Role | Description |
-|-----------|------|-------------|
-| `MainLayout.vue` | Container/Orchestrator | The sole layout-level coordinator, imports store and composables, manages drag resizing |
-| `ActivityBar.vue` | Presentation | VS Code-style vertical icon navigation bar |
-| `SideBar.vue` | Presentation | Collapsible panel container with named slots |
-| `Toolbar.vue` | Presentation | Top toolbar, event-only communication |
-| `MonacoEditor.vue` | Container | Wraps Monaco editor lifecycle, registers with editor singleton |
-| `FileTree.vue` | Presentation | File tree (2-level depth), emits select/expand/delete events |
-| `TreeNode.vue` | Presentation (recursive) | Generic recursive tree node component |
-| `AgentPanel.vue` | Container | Full Agent chat UI (provider select, mode toggle, message list, input area) |
-| `SettingsDialog.vue` | Container | LLM provider CRUD modal, supports model list fetching |
-| `StatusBar.vue` | Presentation | Bottom status bar, listens to cursor position via editor singleton |
-| `SaveDialog.vue` | Container | File browser "Save As" dialog |
-
-## Tech Stack
-
-| Technology | Purpose |
-|-----------|---------|
-| Vue 3 (Composition API) | UI framework |
-| Pinia | State management |
-| Monaco Editor | Code editor |
-| Vite | Build tool |
-| markdown-it + Katex | Agent message Markdown rendering |
-| splitpanes | Resizable split panels |
-| TypeScript | Type system |
-
-## Runtime Environment Adaptation
-
-`detectEnvironment()` auto-detects and adapts to three environments:
-
-| Environment | File System | Agent Mode |
-|------------|------------|------------|
-| Electron | `window.electronAPI` IPC | server (via Express) |
-| Browser | File System Access API | local (direct LLM) or server |
-| Server | HTTP REST `/api/files/*` | server (via Express) |
+> Note: this package is `"type": "module"` and its `tsconfig` sets `noEmit`, so type checking uses `vue-tsc` (not plain `tsc`). The Vite config aliases `@` → `src/`, and `monaco-editor` is in `optimizeDeps.include`.
